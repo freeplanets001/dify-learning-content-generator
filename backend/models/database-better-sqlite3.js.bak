@@ -1,0 +1,222 @@
+import Database from 'better-sqlite3';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import fs from 'fs-extra';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const DATABASE_PATH = process.env.DATABASE_PATH || join(__dirname, '../../data/content.db');
+
+// データディレクトリの作成
+const dataDir = dirname(DATABASE_PATH);
+fs.ensureDirSync(dataDir);
+
+// データベース接続
+const db = new Database(DATABASE_PATH);
+db.pragma('journal_mode = WAL');
+
+/**
+ * データベーステーブル初期化
+ */
+export function initializeDatabase() {
+  // articlesテーブル: 収集した記事情報
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS articles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_type TEXT NOT NULL,
+      source_name TEXT NOT NULL,
+      title TEXT NOT NULL,
+      url TEXT NOT NULL UNIQUE,
+      description TEXT,
+      author TEXT,
+      published_date TEXT,
+      collected_date TEXT NOT NULL DEFAULT (datetime('now')),
+      content TEXT,
+      tags TEXT,
+      status TEXT NOT NULL DEFAULT 'unprocessed',
+      priority INTEGER DEFAULT 0,
+      metadata TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // contentsテーブル: 生成したコンテンツ
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS contents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      article_id INTEGER,
+      template_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      version INTEGER DEFAULT 1,
+      generated_by TEXT,
+      approved_by TEXT,
+      approved_at TEXT,
+      published_url TEXT,
+      metadata TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE SET NULL
+    )
+  `);
+
+  // configsテーブル: システム設定
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS configs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      key TEXT NOT NULL UNIQUE,
+      value TEXT NOT NULL,
+      category TEXT,
+      description TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // logsテーブル: アクティビティログ
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      level TEXT NOT NULL,
+      category TEXT NOT NULL,
+      message TEXT NOT NULL,
+      details TEXT,
+      user_id TEXT,
+      ip_address TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // data_sourcesテーブル: データソース管理
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS data_sources (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL,
+      url TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_collected_at TEXT,
+      collection_count INTEGER DEFAULT 0,
+      error_count INTEGER DEFAULT 0,
+      config TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // インデックス作成
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_articles_url ON articles(url);
+    CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
+    CREATE INDEX IF NOT EXISTS idx_articles_source_type ON articles(source_type);
+    CREATE INDEX IF NOT EXISTS idx_articles_collected_date ON articles(collected_date);
+
+    CREATE INDEX IF NOT EXISTS idx_contents_article_id ON contents(article_id);
+    CREATE INDEX IF NOT EXISTS idx_contents_status ON contents(status);
+    CREATE INDEX IF NOT EXISTS idx_contents_template_type ON contents(template_type);
+
+    CREATE INDEX IF NOT EXISTS idx_logs_category ON logs(category);
+    CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs(created_at);
+
+    CREATE INDEX IF NOT EXISTS idx_data_sources_enabled ON data_sources(enabled);
+  `);
+
+  // デフォルトデータソースの追加
+  const insertDataSource = db.prepare(`
+    INSERT OR IGNORE INTO data_sources (name, type, url, enabled, config)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  const dataSources = [
+    {
+      name: 'Dify Blog',
+      type: 'rss',
+      url: 'https://dify.ai/blog/rss.xml',
+      enabled: 1,
+      config: JSON.stringify({ category: 'official', language: 'en' })
+    },
+    {
+      name: 'Dify YouTube',
+      type: 'youtube',
+      url: 'https://www.youtube.com/feeds/videos.xml?channel_id=YOUR_CHANNEL_ID',
+      enabled: 1,
+      config: JSON.stringify({ category: 'official', language: 'en' })
+    },
+    {
+      name: 'Qiita Dify',
+      type: 'rss',
+      url: 'https://qiita.com/tags/dify/feed',
+      enabled: 1,
+      config: JSON.stringify({ category: 'community', language: 'ja' })
+    },
+    {
+      name: 'Zenn Dify',
+      type: 'rss',
+      url: 'https://zenn.dev/topics/dify/feed',
+      enabled: 1,
+      config: JSON.stringify({ category: 'community', language: 'ja' })
+    },
+    {
+      name: 'Twitter Dify',
+      type: 'twitter',
+      url: null,
+      enabled: 0,
+      config: JSON.stringify({ query: 'dify AI', category: 'social' })
+    }
+  ];
+
+  dataSources.forEach(source => {
+    insertDataSource.run(source.name, source.type, source.url, source.enabled, source.config);
+  });
+
+  console.log('✅ Database initialized successfully');
+}
+
+/**
+ * データベーススキーマのバージョン確認と更新
+ */
+export function checkAndUpgradeSchema() {
+  // 将来的なマイグレーション処理用
+  const getVersion = db.prepare(`
+    SELECT value FROM configs WHERE key = 'schema_version' LIMIT 1
+  `);
+
+  let currentVersion;
+  try {
+    const result = getVersion.get();
+    currentVersion = result ? parseInt(result.value) : 0;
+  } catch (error) {
+    currentVersion = 0;
+  }
+
+  const LATEST_VERSION = 1;
+
+  if (currentVersion < LATEST_VERSION) {
+    console.log(`Upgrading schema from version ${currentVersion} to ${LATEST_VERSION}`);
+
+    // バージョン情報の更新
+    const upsertVersion = db.prepare(`
+      INSERT OR REPLACE INTO configs (key, value, category, description)
+      VALUES ('schema_version', ?, 'system', 'Database schema version')
+    `);
+    upsertVersion.run(LATEST_VERSION.toString());
+
+    console.log('✅ Schema upgrade completed');
+  }
+}
+
+// スクリプトとして直接実行された場合
+if (import.meta.url === `file://${process.argv[1]}`) {
+  console.log('Initializing database...');
+  initializeDatabase();
+  checkAndUpgradeSchema();
+  process.exit(0);
+}
+
+export default db;

@@ -1,0 +1,333 @@
+import express from 'express';
+import * as collectorService from '../services/collector.service.js';
+import * as articleModel from '../models/article.model.js';
+import * as configModel from '../models/config.model.js';
+import { validatePagination, formatSuccessResponse, formatErrorResponse } from '../utils/validator.js';
+import logger, { logApiError } from '../utils/logger.js';
+
+const router = express.Router();
+
+/**
+ * GET /api/collector/status
+ * 収集ステータスを取得
+ */
+router.get('/status', (req, res) => {
+  try {
+    const status = collectorService.getCollectionStatus();
+    res.json(formatSuccessResponse(status));
+  } catch (error) {
+    logApiError('/api/collector/status', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * POST /api/collector/trigger
+ * 収集をトリガー
+ */
+router.post('/trigger', async (req, res) => {
+  try {
+    const { sourceId, source, method = 'direct' } = req.body;
+
+    let result;
+
+    if (method === 'gas') {
+      // GAS経由で収集
+      result = await collectorService.triggerGasCollection();
+    } else if (sourceId) {
+      // 特定のソースから収集
+      result = await collectorService.collectFromSourceById(sourceId);
+    } else if (source) {
+      // ソース名指定で収集
+      switch (source) {
+        case 'dify-blog':
+          result = await collectorService.collectDifyBlog();
+          break;
+        case 'qiita':
+          result = await collectorService.collectQiita();
+          break;
+        case 'zenn':
+          result = await collectorService.collectZenn();
+          break;
+        default:
+          return res.status(400).json(formatErrorResponse('Unknown source'));
+      }
+    } else {
+      // 全ソースから収集
+      result = await collectorService.collectFromAllSources();
+    }
+
+    res.json(formatSuccessResponse(result, 'Collection completed'));
+  } catch (error) {
+    logApiError('/api/collector/trigger', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * GET /api/collector/articles
+ * 記事一覧を取得
+ */
+router.get('/articles', (req, res) => {
+  try {
+    const {
+      status,
+      source_type,
+      source_name,
+      limit = 50,
+      offset = 0,
+      orderBy = 'collected_date',
+      order = 'DESC'
+    } = req.query;
+
+    // ページネーションバリデーション
+    const validation = validatePagination(limit, offset);
+    if (!validation.isValid) {
+      return res.status(400).json(formatErrorResponse(validation.errors));
+    }
+
+    const options = {
+      status,
+      source_type,
+      source_name,
+      limit: validation.limit,
+      offset: validation.offset,
+      orderBy,
+      order
+    };
+
+    const articles = articleModel.getArticles(options);
+    const total = articleModel.getArticleCount(options);
+
+    res.json(formatSuccessResponse({
+      articles,
+      total,
+      limit: validation.limit,
+      offset: validation.offset
+    }));
+  } catch (error) {
+    logApiError('/api/collector/articles', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * GET /api/collector/articles/:id
+ * 記事詳細を取得
+ */
+router.get('/articles/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const article = articleModel.getArticleById(parseInt(id));
+
+    if (!article) {
+      return res.status(404).json(formatErrorResponse('Article not found'));
+    }
+
+    res.json(formatSuccessResponse(article));
+  } catch (error) {
+    logApiError(`/api/collector/articles/${req.params.id}`, error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * PATCH /api/collector/articles/:id/status
+ * 記事のステータスを更新
+ */
+router.patch('/articles/:id/status', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json(formatErrorResponse('Status is required'));
+    }
+
+    const validStatuses = ['unprocessed', 'processing', 'processed', 'error', 'archived'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json(
+        formatErrorResponse(`Status must be one of: ${validStatuses.join(', ')}`)
+      );
+    }
+
+    const article = articleModel.updateArticleStatus(parseInt(id), status);
+
+    if (!article) {
+      return res.status(404).json(formatErrorResponse('Article not found'));
+    }
+
+    res.json(formatSuccessResponse(article, 'Status updated'));
+  } catch (error) {
+    logApiError(`/api/collector/articles/${req.params.id}/status`, error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * DELETE /api/collector/articles/:id
+ * 記事を削除
+ */
+router.delete('/articles/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = articleModel.deleteArticle(parseInt(id));
+
+    if (!deleted) {
+      return res.status(404).json(formatErrorResponse('Article not found'));
+    }
+
+    res.json(formatSuccessResponse({ deleted: true }, 'Article deleted'));
+  } catch (error) {
+    logApiError(`/api/collector/articles/${req.params.id}`, error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * GET /api/collector/sources
+ * データソース一覧を取得
+ */
+router.get('/sources', (req, res) => {
+  try {
+    const { enabled } = req.query;
+    const sources = configModel.getAllDataSources(enabled === 'true');
+
+    res.json(formatSuccessResponse(sources));
+  } catch (error) {
+    logApiError('/api/collector/sources', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * GET /api/collector/sources/:id
+ * データソース詳細を取得
+ */
+router.get('/sources/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const source = configModel.getDataSource(parseInt(id));
+
+    if (!source) {
+      return res.status(404).json(formatErrorResponse('Source not found'));
+    }
+
+    res.json(formatSuccessResponse(source));
+  } catch (error) {
+    logApiError(`/api/collector/sources/${req.params.id}`, error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * POST /api/collector/sources
+ * データソースを作成
+ */
+router.post('/sources', (req, res) => {
+  try {
+    const { name, type, url, enabled, config: sourceConfig } = req.body;
+
+    if (!name || !type) {
+      return res.status(400).json(
+        formatErrorResponse('Name and type are required')
+      );
+    }
+
+    const source = configModel.createDataSource({
+      name,
+      type,
+      url,
+      enabled,
+      config: sourceConfig
+    });
+
+    res.status(201).json(formatSuccessResponse(source, 'Source created'));
+  } catch (error) {
+    logApiError('/api/collector/sources', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * PATCH /api/collector/sources/:id
+ * データソースを更新
+ */
+router.patch('/sources/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    const source = configModel.updateDataSource(parseInt(id), updateData);
+
+    if (!source) {
+      return res.status(404).json(formatErrorResponse('Source not found'));
+    }
+
+    res.json(formatSuccessResponse(source, 'Source updated'));
+  } catch (error) {
+    logApiError(`/api/collector/sources/${req.params.id}`, error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * POST /api/collector/sources/:id/toggle
+ * データソースの有効/無効を切り替え
+ */
+router.post('/sources/:id/toggle', (req, res) => {
+  try {
+    const { id } = req.params;
+    const source = configModel.toggleDataSource(parseInt(id));
+
+    if (!source) {
+      return res.status(404).json(formatErrorResponse('Source not found'));
+    }
+
+    res.json(formatSuccessResponse(source, 'Source toggled'));
+  } catch (error) {
+    logApiError(`/api/collector/sources/${req.params.id}/toggle`, error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * DELETE /api/collector/sources/:id
+ * データソースを削除
+ */
+router.delete('/sources/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = configModel.deleteDataSource(parseInt(id));
+
+    if (!deleted) {
+      return res.status(404).json(formatErrorResponse('Source not found'));
+    }
+
+    res.json(formatSuccessResponse({ deleted: true }, 'Source deleted'));
+  } catch (error) {
+    logApiError(`/api/collector/sources/${req.params.id}`, error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * GET /api/collector/stats
+ * 収集統計を取得
+ */
+router.get('/stats', (req, res) => {
+  try {
+    const stats = articleModel.getArticleStats();
+    const bySource = articleModel.getArticlesBySource();
+
+    res.json(formatSuccessResponse({
+      overall: stats,
+      by_source: bySource
+    }));
+  } catch (error) {
+    logApiError('/api/collector/stats', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+export default router;

@@ -1,0 +1,94 @@
+{
+  "name": "Content Generator for Learning Materials",
+  "description": "Dify学習コンテンツ自動生成ワークフロー",
+  "version": "1.0.0",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "data": {
+        "variables": {
+          "article_title": {
+            "type": "string",
+            "required": true
+          },
+          "article_url": {
+            "type": "string",
+            "required": true
+          },
+          "article_description": {
+            "type": "string"
+          },
+          "article_content": {
+            "type": "string"
+          },
+          "article_author": {
+            "type": "string"
+          },
+          "article_source": {
+            "type": "string",
+            "required": true
+          },
+          "template_type": {
+            "type": "select",
+            "options": ["tutorial", "note-article", "threads-post", "slide-outline"],
+            "required": true
+          },
+          "custom_prompt": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "id": "condition_template",
+      "type": "if-else",
+      "data": {
+        "conditions": [
+          {
+            "variable": "{{template_type}}",
+            "operator": "equals",
+            "value": "tutorial"
+          }
+        ]
+      }
+    },
+    {
+      "id": "llm_tutorial",
+      "type": "llm",
+      "data": {
+        "model": "gpt-4",
+        "prompt": "Generate tutorial content...",
+        "temperature": 0.7,
+        "max_tokens": 2000
+      }
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "data": {
+        "outputs": {
+          "content": "{{llm.output}}",
+          "metadata": {
+            "template_type": "{{template_type}}"
+          }
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "start",
+      "target": "condition_template"
+    },
+    {
+      "source": "condition_template",
+      "target": "llm_tutorial",
+      "condition": "tutorial"
+    },
+    {
+      "source": "llm_tutorial",
+      "target": "end"
+    }
+  ]
+}
