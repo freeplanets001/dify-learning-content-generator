@@ -88,7 +88,9 @@ function Content() {
     setLoadingContents(true);
     try {
       const res = await contentApi.getContents({ limit: 50, orderBy: 'created_at', order: 'DESC' });
-      setContents(res?.data?.contents || []);
+      // response structure from content.api.js is { data: [Array] }
+      // so res.data IS the array.
+      setContents(Array.isArray(res?.data) ? res.data : (res?.data?.contents || []));
     } catch { /* ignore */ }
     finally { setLoadingContents(false); }
   };
