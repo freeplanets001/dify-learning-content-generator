@@ -117,5 +117,10 @@ export default {
     // Obsidian関連
     obsidian: {
         save: (filename, content, path) => gasClient.request('saveToObsidian', { filename, content, path }),
+    },
+
+    // 画像生成関連
+    image: {
+        generate: (prompt) => gasClient.request('generateImage', { prompt }),
     }
 };

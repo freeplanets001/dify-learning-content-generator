@@ -103,6 +103,19 @@ function isConfigured() {
   return !!(config.apiKey && config.workflowId);
 }
 
+/**
+ * 公開設定のみ取得 (APIキーなどは隠す)
+ */
+function getPublicSettings() {
+  const settings = getSettings();
+  return {
+    difyBaseUrl: settings[SETTINGS_KEYS.DIFY_BASE_URL],
+    difyWorkflowId: settings[SETTINGS_KEYS.DIFY_WORKFLOW_ID],
+    // APIキーはセキュリティのため返さない、またはマスキングする
+    isDifyConfigured: !!settings[SETTINGS_KEYS.DIFY_API_KEY]
+  };
+}
+
 // === 初期設定・権限 ===
 
 /**

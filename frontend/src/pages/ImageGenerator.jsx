@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import * as fabric from 'fabric';
-import api from '../services/api';
+import api from '../services/api-adapter';
 
 // フォント
 const FONTS = ['Arial', 'Roboto', 'Open Sans', 'Noto Sans JP', 'M PLUS Rounded 1c', 'Poppins', 'Montserrat', 'Playfair Display', 'Bebas Neue', 'Oswald'];
@@ -403,11 +403,26 @@ function ImageGenerator() {
         if (!prompt.trim()) return;
         setGenerating(true); setEditMode(false);
         try {
-            const res = await api.post('/api/content/generate-image', { prompt });
-            const url = res?.data?.imageUrl || res?.imageUrl;
-            if (res.success && url) { const clean = url.replace(/^!\[\]\(/, '').replace(/\)$/, ''); setImageUrl(clean); setProxyUrl(`/api/content/proxy-image?url=${encodeURIComponent(clean)}`); }
-            else alert('生成失敗');
-        } catch { alert('生成失敗'); }
+            // GAS API呼び出し
+            const result = await api.image.generate(prompt);
+
+            // GASからは { imageUrl: '...' } またはMarkdownなどが返ると想定
+            const url = result?.imageUrl || result?.url;
+
+            if (url) {
+                const clean = url.replace(/^!\[\]\(/, '').replace(/\)$/, '');
+                setImageUrl(clean);
+                // GAS経由の場合はプロキシ不要（GAS側でbase64化するか、署名付きURLならそのまま使える）
+                // とりあえずそのままセットしてみる
+                setProxyUrl(clean);
+            }
+            else {
+                alert('画像URLが取得できませんでした');
+            }
+        } catch (e) {
+            console.error('Image Generation Error:', e);
+            alert('生成失敗: ' + e.message);
+        }
         finally { setGenerating(false); }
     };
 

@@ -271,3 +271,44 @@ function generateContentLocal(articleId, templateId) {
     usedDify: false
   };
 }
+
+/**
+ * 画像生成 (Difyワークフロー経由)
+ */
+function generateImageFromDify(prompt) {
+  // 画像生成用の入力を構築
+  const inputs = {
+    prompt: prompt,
+    mode: 'image_generation' // ワークフロー側で分岐させるためのフラグ
+  };
+  
+  try {
+    const outputs = callDifyWorkflow(inputs);
+    
+    // 出力から画像URLを探す
+    let imageUrl = outputs.image || outputs.image_url || outputs.url || '';
+    
+    // テキスト出力に含まれている場合も考慮 (Markdown)
+    if (!imageUrl && (outputs.text || outputs.answer || outputs.content)) {
+      const text = outputs.text || outputs.answer || outputs.content || '';
+      const match = text.match(/!\[.*?\]\((.*?)\)/);
+      if (match) {
+        imageUrl = match[1];
+      } else if (text.startsWith('http')) {
+        imageUrl = text;
+      }
+    }
+    
+    if (!imageUrl) {
+      // ダミー画像 (テスト用)
+      // imageUrl = 'https://via.placeholder.com/1024x1024.png?text=' + encodeURIComponent(prompt);
+      throw new Error('Difyから有効な画像URLが返されませんでした');
+    }
+    
+    return { success: true, imageUrl: imageUrl };
+    
+  } catch (e) {
+    console.error('Image Gen Error:', e);
+    throw e;
+  }
+}

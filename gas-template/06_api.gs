@@ -1,6 +1,11 @@
 /**
  * 06_api.gs - Web API エントリーポイント
  * Webアプリからのリクエストを処理
+ * 
+ * 修正履歴:
+ * - レスポンスをTEXT形式に変更 (CORS対策)
+ * - 内部関数を各モジュール (01_config, 02_rss) に移動
+ * - addRssSource -> saveRssSource に修正
  */
 
 // === Web API エントリーポイント ===
@@ -21,7 +26,17 @@ function doPost(e) {
       return createErrorResponse('No post data received');
     }
     
-    const request = JSON.parse(e.postData.contents);
+    // JSONパース試行
+    let request;
+    try {
+      request = JSON.parse(e.postData.contents);
+    } catch (parseError) {
+      console.warn('JSON Parse Error:', parseError);
+      // fallback: postData自体がJSONオブジェクトの場合もある？(GAS仕様)
+      // text/plain送信ならcontentsは文字列のはず
+      return createErrorResponse('Invalid JSON payload');
+    }
+    
     const action = request.action;
     const params = request.params || {};
     
@@ -30,7 +45,7 @@ function doPost(e) {
     let result;
     
     switch (action) {
-      // === 収集関連 ===
+      // === 収集関連 (02_rss.gs) ===
       case 'collectRss':
         result = collectAllRss();
         break;
@@ -44,14 +59,16 @@ function doPost(e) {
         break;
         
       case 'getArticle':
+        // getArticleById は 02_rss.gs に定義
         result = getArticleById(params.id);
         break;
         
       case 'deleteArticle':
+        // deleteArticle は 02_rss.gs に定義
         result = deleteArticle(params.id);
         break;
         
-      // === コンテンツ生成関連 ===
+      // === コンテンツ生成関連 (03_dify.gs) ===
       case 'generateContent':
         result = generateContent(params.articleId, params.templateId);
         break;
@@ -64,12 +81,19 @@ function doPost(e) {
         result = getContents(params.limit || 50);
         break;
         
-      // === 設定関連 ===
+      case 'generateImage':
+        // generateImageFromDify は 03_dify.gs に定義
+        result = generateImageFromDify(params.prompt);
+        break;
+        
+      // === 設定関連 (01_config.gs, 02_rss.gs) ===
       case 'getSettings':
+        // getPublicSettings は 01_config.gs に定義
         result = getPublicSettings();
         break;
         
       case 'saveSettings':
+        // saveSetting は 01_config.gs に定義
         if (params.difyApiKey) saveSetting(SETTINGS_KEYS.DIFY_API_KEY, params.difyApiKey);
         if (params.difyBaseUrl) saveSetting(SETTINGS_KEYS.DIFY_BASE_URL, params.difyBaseUrl);
         if (params.difyWorkflowId) saveSetting(SETTINGS_KEYS.DIFY_WORKFLOW_ID, params.difyWorkflowId);
@@ -77,18 +101,25 @@ function doPost(e) {
         break;
         
       case 'getRssSources':
+        // getRssSources は 02_rss.gs に定義
         result = getRssSources();
         break;
         
       case 'saveRssSource':
-        result = addRssSource(params.name, params.url, params.enabled);
+        // saveRssSource は 02_rss.gs に定義 (引数はオブジェクト)
+        result = saveRssSource({
+          name: params.name,
+          url: params.url,
+          enabled: params.enabled
+        });
         break;
         
       case 'deleteRssSource':
+        // deleteRssSource は 02_rss.gs に定義
         result = deleteRssSource(params.id);
         break;
         
-      // === Obsidian連携 ===
+      // === Obsidian連携 (07_obsidian.gs) ===
       case 'saveToObsidian':
         result = saveToObsidian(params.filename, params.content, params.path);
         break;
@@ -108,11 +139,9 @@ function doPost(e) {
 // === ヘルパー関数 ===
 
 /**
- * JSONレスポンスを作成
+ * JSONレスポンスを作成 (TextOutputとして返す)
  */
 function createJsonResponse(data) {
-  // MimeType.JSONだとブラウザによっては厳格なCORSチェックやパースエラーになることがあるため、
-  // TEXTとして返してフロントエンドでパースする方が安定する
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.TEXT);
 }
@@ -122,49 +151,4 @@ function createJsonResponse(data) {
  */
 function createErrorResponse(message) {
   return createJsonResponse({ success: false, error: message });
-}
-
-/**
- * 公開設定のみ取得 (APIキーなどは隠す)
- */
-function getPublicSettings() {
-  const settings = getSettings();
-  return {
-    difyBaseUrl: settings[SETTINGS_KEYS.DIFY_BASE_URL],
-    difyWorkflowId: settings[SETTINGS_KEYS.DIFY_WORKFLOW_ID],
-    // APIキーはセキュリティのため返さない、またはマスキングする
-    isDifyConfigured: !!settings[SETTINGS_KEYS.DIFY_API_KEY]
-  };
-}
-
-/**
- * 記事削除
- */
-function deleteArticle(id) {
-  const sheet = getOrCreateSheet(SHEET_NAMES.ARTICLES);
-  const data = sheet.getDataRange().getValues();
-  
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] == id) {
-      sheet.deleteRow(i + 1);
-      return { success: true };
-    }
-  }
-  return { success: false, message: 'Article not found' };
-}
-
-/**
- * RSSソース削除
- */
-function deleteRssSource(id) {
-  const sheet = getOrCreateSheet(SHEET_NAMES.RSS_SOURCES);
-  const data = sheet.getDataRange().getValues();
-  
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] == id) {
-      sheet.deleteRow(i + 1);
-      return { success: true };
-    }
-  }
-  return { success: false, message: 'Source not found' };
 }

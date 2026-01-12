@@ -237,6 +237,30 @@ function getRssSources() {
 }
 
 /**
+ * IDで記事を取得
+ */
+function getArticleById(id) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.ARTICLES);
+  const data = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (String(row[0]) === String(id)) {
+      return {
+        id: row[0],
+        title: row[1],
+        url: row[2],
+        source: row[3],
+        collectedAt: row[4],
+        summary: row[5],
+        status: row[6]
+      };
+    }
+  }
+  return null;
+}
+
+/**
  * RSSソースを保存
  */
 function saveRssSource(source) {
@@ -287,4 +311,36 @@ function getArticles(limit = 50) {
   }
   
   return articles;
+}
+
+/**
+ * 記事削除
+ */
+function deleteArticle(id) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.ARTICLES);
+  const data = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == id) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Article not found' };
+}
+
+/**
+ * RSSソース削除
+ */
+function deleteRssSource(id) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.RSS_SOURCES);
+  const data = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == id) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Source not found' };
 }
