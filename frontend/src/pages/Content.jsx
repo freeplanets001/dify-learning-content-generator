@@ -88,11 +88,9 @@ function Content() {
     setLoadingContents(true);
     try {
       const res = await contentApi.getContents({ limit: 50, orderBy: 'created_at', order: 'DESC' });
-      console.log('DEBUG_CONTENT_RES:', res);
       const data = Array.isArray(res?.data) ? res.data : (res?.data?.contents || []);
-      console.log('DEBUG_CONTENT_DATA:', data);
       setContents(data);
-    } catch (e) { console.error('LOAD_ERR:', e); }
+    } catch { /* ignore */ }
     finally { setLoadingContents(false); }
   };
 

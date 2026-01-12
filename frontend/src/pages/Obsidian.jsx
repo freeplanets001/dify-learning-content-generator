@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as obsidianApi from '../services/obsidian.api';
 import * as settingsApi from '../services/settings.api';
 
@@ -58,26 +59,6 @@ const styles = {
   cardBody: {
     padding: '24px'
   },
-  fieldGroup: {
-    marginBottom: '20px'
-  },
-  label: {
-    display: 'block',
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: '8px'
-  },
-  input: {
-    width: '100%',
-    padding: '14px 18px',
-    border: '2px solid #E5E7EB',
-    borderRadius: '12px',
-    fontSize: '15px',
-    transition: 'all 0.2s ease',
-    outline: 'none',
-    boxSizing: 'border-box'
-  },
   button: (color = '#6366F1') => ({
     padding: '14px 28px',
     background: `linear-gradient(135deg, ${color} 0%, ${adjustColor(color, -20)} 100%)`,
@@ -97,24 +78,6 @@ const styles = {
     opacity: 0.6,
     cursor: 'not-allowed'
   },
-  statusBadge: (connected) => ({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 16px',
-    borderRadius: '20px',
-    fontSize: '14px',
-    fontWeight: '600',
-    background: connected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-    color: connected ? '#059669' : '#DC2626'
-  }),
-  dot: (connected) => ({
-    width: '10px',
-    height: '10px',
-    borderRadius: '50%',
-    background: connected ? '#10B981' : '#EF4444',
-    boxShadow: connected ? '0 0 8px #10B981' : 'none'
-  }),
   toast: (type) => ({
     position: 'fixed',
     top: '24px',
@@ -169,6 +132,51 @@ const styles = {
     textAlign: 'center',
     padding: '48px 24px',
     color: '#6B7280'
+  },
+  alertBox: {
+    background: 'rgba(254, 243, 199, 0.95)',
+    border: '2px solid #F59E0B',
+    borderRadius: '16px',
+    padding: '24px',
+    marginBottom: '32px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    color: '#92400E',
+    boxShadow: '0 8px 20px rgba(0,0,0,0.1)',
+    backdropFilter: 'blur(10px)'
+  },
+  alertContent: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px'
+  },
+  alertIcon: {
+    fontSize: '32px'
+  },
+  alertTitle: {
+    fontSize: '18px',
+    fontWeight: '700',
+    marginBottom: '4px',
+    display: 'block'
+  },
+  alertDesc: {
+    fontSize: '14px',
+    opacity: 0.9
+  },
+  alertButton: {
+    background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
+    color: '#fff',
+    border: 'none',
+    padding: '12px 24px',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    fontWeight: '700',
+    fontSize: '14px',
+    boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)',
+    transition: 'all 0.2s ease',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   }
 };
 
@@ -183,11 +191,11 @@ function adjustColor(color, amount) {
 }
 
 function Obsidian() {
+  const navigate = useNavigate();
   const [vaultPath, setVaultPath] = useState('');
   const [dailyNotePath, setDailyNotePath] = useState('Daily Notes');
   const [isConnected, setIsConnected] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState(null);
   const [recentNotes, setRecentNotes] = useState([]);
@@ -231,60 +239,10 @@ function Obsidian() {
     setTimeout(() => setMessage(null), 4000);
   };
 
-  // 設定保存
-  const handleSave = async () => {
-    if (!vaultPath) {
-      showMessage('Vault パスを入力してください', 'error');
-      return;
-    }
-
-    try {
-      setSaving(true);
-      await settingsApi.saveSettings({
-        obsidianVaultPath: vaultPath,
-        obsidianDailyNotePath: dailyNotePath
-      });
-      showMessage('設定を保存しました ✨', 'success');
-
-      // 接続状態を再確認
-      const statusRes = await settingsApi.getConnectionStatus();
-      setIsConnected(statusRes.data?.obsidian?.configured || false);
-    } catch (error) {
-      showMessage('設定の保存に失敗しました', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // 接続テスト
-  const handleTestConnection = async () => {
-    if (!vaultPath) {
-      showMessage('Vault パスを入力してください', 'error');
-      return;
-    }
-
-    try {
-      setSaving(true);
-      const result = await settingsApi.testConnection('obsidian', { obsidianVaultPath: vaultPath });
-
-      if (result.data?.success) {
-        showMessage('Vault接続成功 ✅', 'success');
-        setIsConnected(true);
-      } else {
-        showMessage(`接続失敗: ${result.data?.message || 'Vaultが見つかりません'}`, 'error');
-        setIsConnected(false);
-      }
-    } catch (error) {
-      showMessage('接続テストに失敗しました', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   // Daily Note生成
   const handleGenerateDailyNote = async () => {
     if (!vaultPath) {
-      showMessage('先にVault パスを設定してください', 'error');
+      showMessage('先に設定画面でVault パスを設定してください', 'error');
       return;
     }
 
@@ -353,62 +311,26 @@ function Obsidian() {
           <p style={styles.subtitle}>収集した情報をObsidianのDaily Noteとして自動生成します</p>
         </div>
 
-        {/* Vault設定 */}
-        <div style={styles.card}>
-          <div style={styles.cardHeader('#8B5CF6')}>
-            <h2 style={styles.cardTitle}>
-              <span>⚙️</span> Vault設定
-            </h2>
-            <div style={styles.statusBadge(isConnected)}>
-              <div style={styles.dot(isConnected)}></div>
-              {isConnected ? '接続済み' : '未接続'}
+        {/* 設定警告 (未接続時のみ表示) */}
+        {!isConnected && (
+          <div style={styles.alertBox}>
+            <div style={styles.alertContent}>
+              <span style={styles.alertIcon}>⚠️</span>
+              <div>
+                <span style={styles.alertTitle}>設定が必要です</span>
+                <span style={styles.alertDesc}>Daily Noteを生成するには、まずObsidianのVault設定を行ってください。</span>
+              </div>
             </div>
+            <button
+              style={styles.alertButton}
+              onClick={() => navigate('/settings')}
+              onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
+              onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
+            >
+              設定画面へ →
+            </button>
           </div>
-          <div style={styles.cardBody}>
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Vault パス</label>
-              <input
-                type="text"
-                style={styles.input}
-                placeholder="/Users/t_u/Documents/Sync保管庫"
-                value={vaultPath}
-                onChange={(e) => setVaultPath(e.target.value)}
-              />
-            </div>
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Daily Note パス（Vault内の相対パス）</label>
-              <input
-                type="text"
-                style={styles.input}
-                placeholder="Daily Notes"
-                value={dailyNotePath}
-                onChange={(e) => setDailyNotePath(e.target.value)}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                style={{
-                  ...styles.button('#8B5CF6'),
-                  ...(saving ? styles.buttonDisabled : {})
-                }}
-                onClick={handleSave}
-                disabled={saving}
-              >
-                {saving ? '⏳ 保存中...' : '💾 設定を保存'}
-              </button>
-              <button
-                style={{
-                  ...styles.button('#6B7280'),
-                  ...(saving ? styles.buttonDisabled : {})
-                }}
-                onClick={handleTestConnection}
-                disabled={saving}
-              >
-                ⚡ 接続テスト
-              </button>
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* Daily Note生成 */}
         <div style={styles.card}>
@@ -434,7 +356,7 @@ function Obsidian() {
             </button>
             {!isConnected && (
               <p style={{ color: '#DC2626', marginTop: '12px', fontSize: '14px' }}>
-                ※ 先にVault設定を保存してください
+                ※ 生成するには設定が必要です
               </p>
             )}
           </div>
