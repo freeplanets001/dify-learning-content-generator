@@ -42,6 +42,9 @@ class GasClient {
             // POSTリクエスト (CORS回避のため text/plain で送信する場合が多いが、
             // 最近のGASは application/json も受け取れる場合がある)
             // ここでは安定性の高い text/plain (JSON文字列) で送信
+            // GAS URLの確認
+            console.log(`Sending request to: ${this.baseUrl} with action: ${action}`);
+
             const response = await fetch(this.baseUrl, {
                 method: 'POST',
                 headers: {
@@ -59,6 +62,8 @@ class GasClient {
             // GASはリダイレクト後に text/plain で返すことがあるため、
             // 一度テキストとして取得してからJSONパースを試みる
             const textData = await response.text();
+            console.log('Raw GAS Response:', textData); // Correctly locate this log
+
             let data;
             try {
                 data = JSON.parse(textData);

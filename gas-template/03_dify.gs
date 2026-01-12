@@ -56,7 +56,14 @@ function callDifyWorkflow(inputs) {
   console.log('Dify Response:', JSON.stringify(result)); // Debug log
   
   if (result.data && result.data.outputs) {
+    console.log('Dify Outputs:', JSON.stringify(result.data.outputs));
     return result.data.outputs;
+  }
+  
+  if (result.data && result.data.status === 'succeeded' && !result.data.outputs) {
+      console.warn('Dify succeeded but no outputs found. Full result:', JSON.stringify(result));
+      // Fallback: Check if outputs are directly in data or elsewhere
+      return result.data; 
   }
   
   // ワークフローのステータスチェック
@@ -92,15 +99,22 @@ function generateContent(articleId, templateId) {
     article_content: article.summary || '',
     source_name: article.source,
     template_type: templateId,
-    template_name: template.name
+    template_name: template.name,
+    article_description: article.summary || '',
+    article_author: article.source || 'Unknown',
+    article_source: article.source || 'Unknown'
   };
   
   // Dify API呼び出し
+  console.log('Dify Inputs:', JSON.stringify(inputs)); // Debug log
   const outputs = callDifyWorkflow(inputs);
   
   // 生成されたコンテンツを取得
-  const generatedTitle = outputs.title || outputs.generated_title || article.title;
-  const generatedContent = outputs.content || outputs.generated_content || outputs.text || '';
+  // 生成されたコンテンツを取得
+  const generatedTitle = outputs.title || outputs.generated_title || outputs.article_title || article.title;
+  const generatedContent = outputs.content || outputs.generated_content || outputs.text || outputs.answer || '';
+  
+  console.log('Parsed Content:', { title: generatedTitle, contentLen: generatedContent.length });
   
   // 保存
   const contentId = saveContent({
@@ -142,7 +156,11 @@ function generateCombinedContent(articleIds, templateId) {
     template_type: templateId,
     template_name: template.name,
     is_combined: 'true',
-    article_count: articles.length.toString()
+
+    article_count: articles.length.toString(),
+    article_description: `${articles.length}件の記事のまとめ`,
+    article_author: sourcesList || 'Compilation',
+    article_source: sourcesList || 'Compilation'
   };
   
   const outputs = callDifyWorkflow(inputs);
