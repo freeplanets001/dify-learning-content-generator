@@ -213,29 +213,7 @@ function getContents(limit = 50) {
   return contents;
 }
 
-/**
- * 記事をIDで取得
- */
-function getArticleById(articleId) {
-  const sheet = getOrCreateSheet(SHEET_NAMES.ARTICLES);
-  const data = sheet.getDataRange().getValues();
-  
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] == articleId) {
-      return {
-        id: data[i][0],
-        title: data[i][1],
-        url: data[i][2],
-        source: data[i][3],
-        collectedAt: data[i][4],
-        summary: data[i][5],
-        status: data[i][6]
-      };
-    }
-  }
-  
-  return null;
-}
+
 
 // === ローカル生成 (Dify無し) ===
 

@@ -138,7 +138,10 @@ function Content() {
         setContents(prev => [res.data.content, ...prev]);
         showToast('再生成しました 🔄');
       }
-    } catch { showToast('再生成に失敗しました', 'error'); }
+    } catch (e) {
+      console.error('Regenerate Error:', e);
+      showToast('再生成失敗: ' + (e.message || 'Unknown error'), 'error');
+    }
     finally { setLoading(false); }
   };
 
@@ -210,7 +213,10 @@ function Content() {
                     try {
                       const res = await contentApi.generateContent({ articleId: article.id, templateType: t.id, useDify: true });
                       if (res?.data) { showToast('生成完了！'); navigate('/content'); }
-                    } catch { showToast('生成失敗', 'error'); }
+                    } catch (e) {
+                      console.error('Generation Error:', e);
+                      showToast('生成失敗: ' + (e.message || 'Unknown error'), 'error');
+                    }
                     finally { setLoading(false); }
                   }}>
                     <span style={{ fontSize: '24px' }}>{t.icon}</span>
