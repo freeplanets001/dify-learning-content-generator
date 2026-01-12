@@ -21,7 +21,16 @@ export const testConnection = (service, settings = {}) =>
     Promise.resolve({ data: { success: true, message: 'Connection test simulated (GAS)' } });
 
 // 接続状態取得 (互換用)
-export const getConnectionStatus = () => Promise.resolve({ data: { status: 'connected' } });
+// 接続状態取得
+export const getConnectionStatus = () => api.settings.get()
+    .then(settings => ({
+        data: {
+            dify: { configured: settings.isDifyConfigured },
+            obsidian: { configured: !!settings.obsidianVaultPath },
+            gas: { configured: true }
+        }
+    }))
+    .catch(() => ({ data: {} }));
 
 export default {
     getSettings,

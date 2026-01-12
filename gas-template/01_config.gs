@@ -16,7 +16,9 @@ const SETTINGS_KEYS = {
   DIFY_API_KEY: 'Dify API Key',
   DIFY_BASE_URL: 'Dify Base URL',
   DIFY_WORKFLOW_ID: 'Dify Workflow ID',
-  AUTO_COLLECT_INTERVAL: '自動収集間隔（時間）'
+  AUTO_COLLECT_INTERVAL: '自動収集間隔（時間）',
+  OBSIDIAN_VAULT_PATH: 'Obsidian Vault Path',
+  OBSIDIAN_DAILY_NOTE_PATH: 'Obsidian Daily Note Path'
 };
 
 // === ユーティリティ ===
@@ -112,7 +114,9 @@ function getPublicSettings() {
     difyBaseUrl: settings[SETTINGS_KEYS.DIFY_BASE_URL],
     difyWorkflowId: settings[SETTINGS_KEYS.DIFY_WORKFLOW_ID],
     // APIキーはセキュリティのため返さない、またはマスキングする
-    isDifyConfigured: !!settings[SETTINGS_KEYS.DIFY_API_KEY]
+    isDifyConfigured: !!settings[SETTINGS_KEYS.DIFY_API_KEY],
+    obsidianVaultPath: settings[SETTINGS_KEYS.OBSIDIAN_VAULT_PATH],
+    obsidianDailyNotePath: settings[SETTINGS_KEYS.OBSIDIAN_DAILY_NOTE_PATH]
   };
 }
 

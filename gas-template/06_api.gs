@@ -97,6 +97,8 @@ function doPost(e) {
         if (params.difyApiKey) saveSetting(SETTINGS_KEYS.DIFY_API_KEY, params.difyApiKey);
         if (params.difyBaseUrl) saveSetting(SETTINGS_KEYS.DIFY_BASE_URL, params.difyBaseUrl);
         if (params.difyWorkflowId) saveSetting(SETTINGS_KEYS.DIFY_WORKFLOW_ID, params.difyWorkflowId);
+        if (params.obsidianVaultPath) saveSetting(SETTINGS_KEYS.OBSIDIAN_VAULT_PATH, params.obsidianVaultPath);
+        if (params.obsidianDailyNotePath) saveSetting(SETTINGS_KEYS.OBSIDIAN_DAILY_NOTE_PATH, params.obsidianDailyNotePath);
         result = { success: true };
         break;
         
