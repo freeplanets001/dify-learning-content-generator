@@ -212,7 +212,13 @@ function Content() {
                     setLoading(true);
                     try {
                       const res = await contentApi.generateContent({ articleId: article.id, templateType: t.id, useDify: true });
-                      if (res?.data) { showToast('生成完了！'); navigate('/content'); }
+                      if (res?.data) {
+                        showToast('生成完了！');
+                        setArticle(null);
+                        navigate('/content', { replace: true, state: null });
+                        // loadContents will affect 'contents' state, which is used in the list view
+                        loadContents();
+                      }
                     } catch (e) {
                       console.error('Generation Error:', e);
                       showToast('生成失敗: ' + (e.message || 'Unknown error'), 'error');

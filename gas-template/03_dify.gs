@@ -52,26 +52,10 @@ function callDifyWorkflow(inputs) {
     throw new Error(`Dify API Error: ${responseCode} - ${responseText}`);
   }
   
+  // 生のレスポンスを返す (デバッグのため全量)
   const result = JSON.parse(responseText);
-  console.log('Dify Response:', JSON.stringify(result)); // Debug log
-  
-  if (result.data && result.data.outputs) {
-    console.log('Dify Outputs:', JSON.stringify(result.data.outputs));
-    return result.data.outputs;
-  }
-  
-  if (result.data && result.data.status === 'succeeded' && !result.data.outputs) {
-      console.warn('Dify succeeded but no outputs found. Full result:', JSON.stringify(result));
-      // Fallback: Check if outputs are directly in data or elsewhere
-      return result.data; 
-  }
-  
-  // ワークフローのステータスチェック
-  if (result.data && result.data.status !== 'succeeded') {
-     console.warn('Dify Workflow Status:', result.data.status);
-  }
-
-  throw new Error('Dify APIから有効な出力がありませんでした: ' + JSON.stringify(result));
+  console.log('Dify Response:', JSON.stringify(result));
+  return result;
 }
 
 // === コンテンツ生成 ===
@@ -107,12 +91,14 @@ function generateContent(articleId, templateId) {
   
   // Dify API呼び出し
   console.log('Dify Inputs:', JSON.stringify(inputs)); // Debug log
-  const outputs = callDifyWorkflow(inputs);
+  const rawResponse = callDifyWorkflow(inputs);
+  
+  // 生のレスポンスからoutputsを取り出す
+  const outputs = rawResponse.data?.outputs || rawResponse.data || rawResponse;
   
   // 生成されたコンテンツを取得
-  // 生成されたコンテンツを取得
   const generatedTitle = outputs.title || outputs.generated_title || outputs.article_title || article.title;
-  const generatedContent = outputs.content || outputs.generated_content || outputs.text || outputs.answer || '';
+  const generatedContent = outputs.result || outputs.content || outputs.generated_content || outputs.text || outputs.answer || '';
   
   console.log('Parsed Content:', { title: generatedTitle, contentLen: generatedContent.length });
   
@@ -121,14 +107,16 @@ function generateContent(articleId, templateId) {
     articleId: articleId,
     templateId: templateId,
     title: generatedTitle,
-    content: generatedContent
+    content: generatedContent,
+    debugDifyOutput: rawResponse
   });
   
   return {
     success: true,
     contentId: contentId,
     title: generatedTitle,
-    content: generatedContent
+    content: generatedContent,
+    debugDifyOutput: rawResponse
   };
 }
 
@@ -163,16 +151,20 @@ function generateCombinedContent(articleIds, templateId) {
     article_source: sourcesList || 'Compilation'
   };
   
-  const outputs = callDifyWorkflow(inputs);
+  console.log('Dify Inputs:', JSON.stringify(inputs));
+  const rawResponse = callDifyWorkflow(inputs);
+  
+  const outputs = rawResponse.data?.outputs || rawResponse.data || rawResponse;
   
   const generatedTitle = outputs.title || outputs.generated_title || `${articles.length}件のまとめ`;
-  const generatedContent = outputs.content || outputs.generated_content || outputs.text || '';
+  const generatedContent = outputs.result || outputs.content || outputs.generated_content || outputs.text || outputs.answer || '';
   
   const contentId = saveContent({
     articleId: articleIds.join(','),
     templateId: templateId,
     title: generatedTitle,
-    content: generatedContent
+    content: generatedContent,
+    debugDifyOutput: rawResponse
   });
   
   return {
@@ -180,7 +172,8 @@ function generateCombinedContent(articleIds, templateId) {
     contentId: contentId,
     title: generatedTitle,
     content: generatedContent,
-    articleCount: articles.length
+    articleCount: articles.length,
+    debugDifyOutput: rawResponse
   };
 }
 
@@ -289,7 +282,8 @@ function generateImageFromDify(prompt) {
   };
   
   try {
-    const outputs = callDifyWorkflow(inputs);
+    const rawResponse = callDifyWorkflow(inputs);
+    const outputs = rawResponse.data?.outputs || rawResponse.data || rawResponse;
     
     // 出力から画像URLを探す
     let imageUrl = outputs.image || outputs.image_url || outputs.url || '';
