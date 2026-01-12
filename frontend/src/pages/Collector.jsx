@@ -308,8 +308,8 @@ function Collector() {
       ]);
 
       // データソース
-      if (sourcesRes.status === 'fulfilled' && sourcesRes.value) {
-        const data = sourcesRes.value;
+      if (sourcesRes.status === 'fulfilled' && sourcesRes.value?.data) {
+        const data = sourcesRes.value.data;
         setSources(Array.isArray(data) ? data : []);
       } else {
         console.error('Failed to load sources:', sourcesRes.reason || 'Invalid data');
@@ -317,17 +317,16 @@ function Collector() {
       }
 
       // 記事
-      if (articlesRes.status === 'fulfilled' && articlesRes.value) {
-        const data = articlesRes.value;
-        setArticles(Array.isArray(data) ? data : (data.articles || []));
+      if (articlesRes.status === 'fulfilled' && articlesRes.value?.data) {
+        setArticles(articlesRes.value.data.articles || articlesRes.value.data || []);
       } else {
         console.error('Failed to load articles:', articlesRes.reason);
         setArticles([]);
       }
 
       // 統計
-      if (statsRes.status === 'fulfilled' && statsRes.value) {
-        setStats(statsRes.value);
+      if (statsRes.status === 'fulfilled' && statsRes.value?.data) {
+        setStats(statsRes.value.data);
       } else {
         console.warn('Failed to load stats:', statsRes.reason);
         setStats(null);
