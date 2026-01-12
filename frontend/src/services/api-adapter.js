@@ -122,6 +122,7 @@ export default {
     // Obsidian関連
     obsidian: {
         save: (filename, content, path) => gasClient.request('saveToObsidian', { filename, content, path }),
+        generateDailyNote: () => gasClient.request('generateDailyNote'),
     },
 
     // 画像生成関連

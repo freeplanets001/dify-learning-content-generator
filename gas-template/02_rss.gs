@@ -66,16 +66,67 @@ function collectFromUrl(url, sourceName = 'Manual Import') {
     const response = UrlFetchApp.fetch(url, options);
     const html = response.getContentText();
     
-    // タイトル抽出 (正規表現で簡易抽出)
-    const titleMatch = html.match(/<title>(.*?)<\/title>/);
+    // タイトル抽出
+    const titleMatch = html.match(/<title>(.*?)<\/title>/i);
     const title = titleMatch ? titleMatch[1] : url;
     
-    // 本文抽出などは高度なパースが必要だが、ここでは簡易的に保存
+    // ヘルパー: メタタグ抽出 (属性順序を問わない)
+    const extractMeta = (html, propName, attrName = 'property') => {
+      const regex1 = new RegExp(`<meta[^>]*${attrName}=["']${propName}["'][^>]*content=["']([^"']*)["']`, 'i');
+      const match1 = html.match(regex1);
+      if (match1) return match1[1];
+      
+      const regex2 = new RegExp(`<meta[^>]*content=["']([^"']*)["'][^>]*${attrName}=["']${propName}["']`, 'i');
+      const match2 = html.match(regex2);
+      if (match2) return match2[1];
+      
+      return null;
+    };
+    
+    // 要約・詳細抽出
+    let summary = extractMeta(html, 'og:description') || 
+                  extractMeta(html, 'description', 'name') || 
+                  '';
+    
+    // 画像抽出
+    let imageUrl = extractMeta(html, 'og:image');
+    
+    // 画像があればMarkdown形式で先頭に追加
+    if (imageUrl) {
+      summary = `![Image](${imageUrl})\n\n${summary}`;
+    }
+    
+    // 本文抽出 (簡易スクレイピング: pタグの連結)
+    const extractBodyText = (html) => {
+       // スクリプト、スタイル除去
+       let clean = html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "")
+                       .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "")
+                       .replace(/<!--[\s\S]*?-->/g, "");
+       
+       const pMatches = clean.match(/<p\b[^>]*>([\s\S]*?)<\/p>/gi);
+       if (!pMatches) return "";
+       
+       return pMatches.map(p => p.replace(/<[^>]+>/g, "").trim())
+                      .filter(t => t.length > 40) // ある程度長い文章のみ
+                      .join("\n\n");
+    };
+    
+    const bodyText = extractBodyText(html);
+    
+    // 要約と本文を結合
+    let fullContent = summary;
+    if (bodyText) {
+        // 本文がある場合は区切り線を入れて追加
+        fullContent += "\n\n#### 📖 本文抜粋\n" + bodyText;
+    }
+    
+    if (!summary && !bodyText) fullContent = 'Web Page Import (No content found)';
+    
     const article = {
       title: title,
       url: url,
       source: sourceName,
-      summary: 'Imported by URL',
+      summary: fullContent,
       status: 'new'
     };
     
@@ -139,6 +190,10 @@ function updateRssSourceLastCollected(id) {
  * RssParserのような機能 (XMLパース)
  * GASのXmlServiceを使用
  */
+/**
+ * RssParserのような機能 (XMLパース)
+ * GASのXmlServiceを使用
+ */
 function fetchRssFeed(feedUrl) {
   const articles = [];
   try {
@@ -159,33 +214,79 @@ function fetchRssFeed(feedUrl) {
     
     const document = XmlService.parse(xml);
     const root = document.getRootElement();
-    
-    // Atom vs RSS 2.0 対応
-    let entries = [];
     const namespace = root.getNamespace();
+    const contentNs = XmlService.getNamespace('content', 'http://purl.org/rss/1.0/modules/content/');
+    const mediaNs = XmlService.getNamespace('media', 'http://search.yahoo.com/mrss/');
+    
+    const entries = [];
     
     if (root.getName() === 'feed') {
       // Atom
-      entries = root.getChildren('entry', namespace);
-      for (const entry of entries) {
+      const atomEntries = root.getChildren('entry', namespace);
+      for (const entry of atomEntries) {
         const title = entry.getChild('title', namespace).getText();
-        const link = entry.getChild('link', namespace).getAttribute('href').getValue();
-        const summary = entry.getChild('summary', namespace)?.getText() || '';
+        const linkElem = entry.getChild('link', namespace);
+        const link = linkElem ? linkElem.getAttribute('href').getValue() : '';
+        const summary = entry.getChild('summary', namespace)?.getText() || entry.getChild('content', namespace)?.getText() || '';
+        
+        // Atom Image extraction (less standard)
+        // Check for link rel="enclosure"
+        let imageUrl = '';
+        const links = entry.getChildren('link', namespace);
+        for (const l of links) {
+          if (l.getAttribute('rel')?.getValue() === 'enclosure' && l.getAttribute('type')?.getValue().startsWith('image')) {
+            imageUrl = l.getAttribute('href').getValue();
+            break;
+          }
+        }
+
         if (title && link) {
-          articles.push({ title, link, summary });
+          const formattedContent = formatArticleContent(summary, imageUrl);
+          articles.push({ title, link, summary: formattedContent });
         }
       }
     } else {
       // RSS 2.0
       const channel = root.getChild('channel');
       if (channel) {
-        entries = channel.getChildren('item');
-        for (const item of entries) {
-          const title = item.getChild('title').getText();
-          const link = item.getChild('link').getText();
+        const rssItems = channel.getChildren('item');
+        for (const item of rssItems) {
+          const title = item.getChild('title')?.getText();
+          const link = item.getChild('link')?.getText();
+          
+          // Try to get full content
           const description = item.getChild('description')?.getText() || '';
+          const contentEncoded = item.getChild('encoded', contentNs)?.getText();
+          const fullContent = contentEncoded || description;
+          
+          // Image Extraction
+          let imageUrl = '';
+          const enclosure = item.getChild('enclosure');
+          if (enclosure && enclosure.getAttribute('type')?.getValue().startsWith('image')) {
+            imageUrl = enclosure.getAttribute('url').getValue();
+          }
+          // Try media:content
+          if (!imageUrl && mediaNs) {
+            const media = item.getChild('content', mediaNs);
+            if (media && media.getAttribute('url')) {
+              imageUrl = media.getAttribute('url').getValue();
+            }
+            const thumbnail = item.getChild('thumbnail', mediaNs);
+            if (!imageUrl && thumbnail && thumbnail.getAttribute('url')) {
+              imageUrl = thumbnail.getAttribute('url').getValue();
+            }
+          }
+          // Try regex on content
+          if (!imageUrl) {
+            const imgMatch = fullContent.match(/<img[^>]+src=["']([^"']+)["']/i);
+            if (imgMatch) {
+              imageUrl = imgMatch[1];
+            }
+          }
+
           if (title && link) {
-            articles.push({ title, link, summary: description });
+             const formattedContent = formatArticleContent(fullContent, imageUrl);
+             articles.push({ title, link, summary: formattedContent });
           }
         }
       }
@@ -194,6 +295,37 @@ function fetchRssFeed(feedUrl) {
     console.warn(`RSS Parse Error (${feedUrl}):`, e);
   }
   return articles;
+}
+
+/**
+ * 記事コンテンツを整形 (HTML -> Markdown + Image)
+ */
+function formatArticleContent(html, imageUrl) {
+  let text = html || '';
+  
+  // 基本的なHTMLタグ変換 (簡易Markdown化)
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/p>/gi, '\n\n');
+  text = text.replace(/<\/div>/gi, '\n');
+  text = text.replace(/<li>/gi, '- ');
+  text = text.replace(/<\/li>/gi, '\n');
+  text = text.replace(/<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi, '[$2]($1)');
+  
+  // タグ除去
+  text = text.replace(/<[^>]+>/g, '');
+  
+  // エンティティデコード
+  text = text.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+  
+  // 空行整理
+  text = text.trim();
+  
+  // 画像があれば先頭に追加 (Markdown形式)
+  if (imageUrl) {
+    return `![Image](${imageUrl})\n\n${text}`;
+  }
+  
+  return text;
 }
 
 /**

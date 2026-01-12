@@ -126,6 +126,10 @@ function doPost(e) {
         result = saveToObsidian(params.filename, params.content, params.path);
         break;
         
+      case 'generateDailyNote':
+        result = generateDailyNote();
+        break;
+        
       default:
         throw new Error(`Unknown action: ${action}`);
     }
