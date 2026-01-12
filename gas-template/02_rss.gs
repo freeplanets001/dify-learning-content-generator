@@ -57,7 +57,13 @@ function collectFromUrl(url, sourceName = 'Manual Import') {
   try {
     // スクレイピング (簡易的)
     // GASのUrlFetchAppでHTMLを取得
-    const response = UrlFetchApp.fetch(url);
+    const options = {
+      'headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      },
+      'muteHttpExceptions': true
+    };
+    const response = UrlFetchApp.fetch(url, options);
     const html = response.getContentText();
     
     // タイトル抽出 (正規表現で簡易抽出)
@@ -136,7 +142,21 @@ function updateRssSourceLastCollected(id) {
 function fetchRssFeed(feedUrl) {
   const articles = [];
   try {
-    const xml = UrlFetchApp.fetch(feedUrl).getContentText();
+    const options = {
+      'headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      },
+      'muteHttpExceptions': true
+    };
+    const response = UrlFetchApp.fetch(feedUrl, options);
+    const xml = response.getContentText();
+    
+    // エラーレスポンスの場合
+    if (response.getResponseCode() !== 200) {
+      console.warn(`RSS Fetch Error (${feedUrl}): ${response.getResponseCode()}`);
+      return [];
+    }
+    
     const document = XmlService.parse(xml);
     const root = document.getRootElement();
     
@@ -223,7 +243,9 @@ function getRssSources() {
   
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    if (row[0]) {
+
+    // IDが存在するかチェック (0も許可)
+    if (row[0] !== undefined && row[0] !== '') {
       sources.push({
         id: row[0],
         name: row[1],
@@ -295,14 +317,15 @@ function getArticles(limit = 50) {
   // 新しい順に取得 (後ろから)
   for (let i = data.length - 1; i >= 1; i--) {
     const row = data[i];
-    if (row[0]) {
+    // IDが存在するかチェック (0も許可)
+    if (row[0] !== undefined && row[0] !== '') {
       // ステータスフィルタなどはここに追加可能
       articles.push({
         id: row[0],
         title: row[1],
         url: row[2],
         source: row[3],
-        collectedAt: row[4],
+        collectedAt: row[4] instanceof Date ? row[4].toISOString() : row[4],
         summary: row[5],
         status: row[6]
       });
