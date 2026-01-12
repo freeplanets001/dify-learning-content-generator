@@ -23,14 +23,18 @@ let SQL = null;
  */
 export async function initializeDB() {
   try {
+    console.log('🔄 Initializing SQL.js...');
     SQL = await initSqlJs();
+    console.log('✅ SQL.js initialized');
 
     // 既存のデータベースファイルがあれば読み込む
     if (fs.existsSync(DATABASE_PATH)) {
+      console.log(`📂 Loading database from ${DATABASE_PATH}`);
       const buffer = fs.readFileSync(DATABASE_PATH);
       db = new SQL.Database(buffer);
       console.log('✅ Existing database loaded');
     } else {
+      console.log('🆕 Creating new database instance');
       db = new SQL.Database();
       console.log('✅ New database created');
     }
@@ -98,14 +102,8 @@ export function exec(sql, params = []) {
   if (!db) throw new Error('Database not initialized');
 
   try {
-    if (params.length > 0) {
-      const stmt = db.prepare(sql);
-      stmt.bind(params);
-      stmt.step();
-      stmt.free();
-    } else {
-      db.run(sql);
-    }
+    // SQL.jsではdb.run()でパラメータ付きSQLを実行
+    db.run(sql, params);
 
     // 自動保存
     saveDatabase();
@@ -115,7 +113,7 @@ export function exec(sql, params = []) {
       lastInsertRowid: queryOne('SELECT last_insert_rowid() as id')?.id || 0
     };
   } catch (error) {
-    console.error('Exec error:', error);
+    console.error('Exec error:', error, { sql, params });
     throw error;
   }
 }
@@ -231,55 +229,10 @@ export async function initializeDatabase() {
     // インデックスが既に存在する場合はスキップ
   }
 
-  // デフォルトデータソースの追加
-  const dataSources = [
-    {
-      name: 'Dify Blog',
-      type: 'rss',
-      url: 'https://dify.ai/blog/rss.xml',
-      enabled: 1,
-      config: JSON.stringify({ category: 'official', language: 'en' })
-    },
-    {
-      name: 'Dify YouTube',
-      type: 'youtube',
-      url: 'https://www.youtube.com/feeds/videos.xml?channel_id=YOUR_CHANNEL_ID',
-      enabled: 1,
-      config: JSON.stringify({ category: 'official', language: 'en' })
-    },
-    {
-      name: 'Qiita Dify',
-      type: 'rss',
-      url: 'https://qiita.com/tags/dify/feed',
-      enabled: 1,
-      config: JSON.stringify({ category: 'community', language: 'ja' })
-    },
-    {
-      name: 'Zenn Dify',
-      type: 'rss',
-      url: 'https://zenn.dev/topics/dify/feed',
-      enabled: 1,
-      config: JSON.stringify({ category: 'community', language: 'ja' })
-    },
-    {
-      name: 'Twitter Dify',
-      type: 'twitter',
-      url: null,
-      enabled: 0,
-      config: JSON.stringify({ query: 'dify AI', category: 'social' })
-    }
-  ];
+  // シードデータは削除 - ユーザーがUIで管理
+  // 以前はここでデフォルトデータソースを追加していたが、
+  // ユーザーが削除しても再表示される問題があったため削除
 
-  dataSources.forEach(source => {
-    try {
-      exec(
-        `INSERT OR IGNORE INTO data_sources (name, type, url, enabled, config) VALUES (?, ?, ?, ?, ?)`,
-        [source.name, source.type, source.url, source.enabled, source.config]
-      );
-    } catch (error) {
-      // 既に存在する場合はスキップ
-    }
-  });
 
   saveDatabase();
   console.log('✅ Database initialized successfully');

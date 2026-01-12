@@ -139,6 +139,52 @@ router.post('/batch-generate', async (req, res) => {
 });
 
 /**
+ * POST /api/content/generate-combined
+ * 複数記事を結合して1つのコンテンツを生成
+ */
+router.post('/generate-combined', async (req, res) => {
+  try {
+    const {
+      articleIds,
+      templateType,
+      customPrompt = null,
+      useDify = true,
+      autoApprove = false,
+      combinedTitle = null
+    } = req.body;
+
+    if (!articleIds || !Array.isArray(articleIds) || articleIds.length === 0) {
+      return res.status(400).json(
+        formatErrorResponse('articleIds must be a non-empty array (at least 1 article required)')
+      );
+    }
+
+    if (!templateType) {
+      return res.status(400).json(
+        formatErrorResponse('templateType is required')
+      );
+    }
+
+    const result = await contentGeneratorService.generateCombinedContent(
+      articleIds,
+      templateType,
+      {
+        customPrompt,
+        useDify,
+        autoApprove,
+        combinedTitle,
+        generatedBy: 'user'
+      }
+    );
+
+    res.json(formatSuccessResponse(result, `Combined content generated from ${result.sourceArticles} articles`));
+  } catch (error) {
+    logApiError('/api/content/generate-combined', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
  * GET /api/content
  * コンテンツ一覧を取得
  */
@@ -180,6 +226,133 @@ router.get('/', (req, res) => {
     }));
   } catch (error) {
     logApiError('/api/content', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * POST /api/content/generate-image
+ * NanobananaPro経由で画像を生成
+ */
+router.post('/generate-image', async (req, res) => {
+  try {
+    const { prompt, contentId } = req.body;
+
+    if (!prompt) {
+      return res.status(400).json(formatErrorResponse('prompt is required'));
+    }
+
+    // NanobananaPro (Dify) API経由で画像生成
+    const { SettingsService } = await import('../services/settings.service.js');
+    const settingsService = new SettingsService();
+    const settings = await settingsService.getRawSettings();
+
+    // 画像生成用のDify設定を取得（未設定の場合は通常のDify設定を使用）
+    const apiKey = settings.imageGenApiKey || settings.difyApiKey;
+    const baseUrl = settings.imageGenBaseUrl || settings.difyApiBaseUrl || 'https://api.dify.ai/v1';
+    const workflowId = settings.imageGenWorkflowId;
+
+    if (!apiKey) {
+      return res.status(400).json(formatErrorResponse('Dify API Key is not configured'));
+    }
+
+    if (!workflowId) {
+      return res.status(400).json(formatErrorResponse('Image Generation Workflow ID is not configured'));
+    }
+
+    const axios = (await import('axios')).default;
+    const client = axios.create({
+      baseURL: baseUrl,
+      headers: {
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 120000
+    });
+
+    const response = await client.post('/workflows/run', {
+      inputs: {
+        prompt: prompt
+      },
+      response_mode: 'blocking',
+      user: 'image-generator'
+    });
+
+    // レスポンスから画像URLを抽出
+    const outputs = response.data?.data?.outputs || {};
+    const imageUrl = outputs.image_url || outputs.url || outputs.image || outputs.result;
+
+    if (imageUrl) {
+      res.json(formatSuccessResponse({ imageUrl }, 'Image generated successfully'));
+    } else {
+      res.status(500).json(formatErrorResponse('No image URL in response'));
+    }
+  } catch (error) {
+    logApiError('/api/content/generate-image', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * GET /api/content/proxy-image
+ * 外部画像をプロキシして CORS 問題を回避
+ */
+router.get('/proxy-image', async (req, res) => {
+  try {
+    const { url } = req.query;
+
+    if (!url) {
+      return res.status(400).json(formatErrorResponse('url is required'));
+    }
+
+    const axios = (await import('axios')).default;
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 30000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ImageProxy/1.0)'
+      }
+    });
+
+    // Content-Typeを設定
+    const contentType = response.headers['content-type'] || 'image/png';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    res.send(Buffer.from(response.data));
+  } catch (error) {
+    logApiError('/api/content/proxy-image', error);
+    res.status(500).json(formatErrorResponse('Failed to proxy image'));
+  }
+});
+
+/**
+ * GET /api/content/stats
+ * コンテンツ統計を取得
+ */
+router.get('/stats', (req, res) => {
+  try {
+    const stats = contentGeneratorService.getGenerationStats();
+    res.json(formatSuccessResponse(stats));
+  } catch (error) {
+    logApiError('/api/content/stats', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * GET /api/content/pending/approval
+ * 承認待ちコンテンツを取得
+ */
+router.get('/pending/approval', (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
+    const contents = contentModel.getPendingApprovalContents(parseInt(limit));
+
+    res.json(formatSuccessResponse(contents));
+  } catch (error) {
+    logApiError('/api/content/pending/approval', error);
     res.status(500).json(formatErrorResponse(error.message));
   }
 });
@@ -312,45 +485,19 @@ router.post('/:id/regenerate', async (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const deleted = contentModel.deleteContent(parseInt(id));
 
-    if (!deleted) {
+    // 削除前に存在確認
+    const existing = contentModel.getContentById(parseInt(id));
+    if (!existing) {
       return res.status(404).json(formatErrorResponse('Content not found'));
     }
 
-    res.json(formatSuccessResponse({ deleted: true }, 'Content deleted'));
+    // 削除実行
+    contentModel.deleteContent(parseInt(id));
+
+    res.json(formatSuccessResponse({ deleted: true, id: parseInt(id) }, 'Content deleted'));
   } catch (error) {
     logApiError(`/api/content/${req.params.id}`, error);
-    res.status(500).json(formatErrorResponse(error.message));
-  }
-});
-
-/**
- * GET /api/content/pending/approval
- * 承認待ちコンテンツを取得
- */
-router.get('/pending/approval', (req, res) => {
-  try {
-    const { limit = 20 } = req.query;
-    const contents = contentModel.getPendingApprovalContents(parseInt(limit));
-
-    res.json(formatSuccessResponse(contents));
-  } catch (error) {
-    logApiError('/api/content/pending/approval', error);
-    res.status(500).json(formatErrorResponse(error.message));
-  }
-});
-
-/**
- * GET /api/content/stats
- * コンテンツ統計を取得
- */
-router.get('/stats', (req, res) => {
-  try {
-    const stats = contentGeneratorService.getGenerationStats();
-    res.json(formatSuccessResponse(stats));
-  } catch (error) {
-    logApiError('/api/content/stats', error);
     res.status(500).json(formatErrorResponse(error.message));
   }
 });

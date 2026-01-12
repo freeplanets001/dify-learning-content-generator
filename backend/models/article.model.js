@@ -168,6 +168,32 @@ export function deleteArticle(id) {
 }
 
 /**
+ * 複数の記事を削除
+ */
+export function deleteArticles(ids) {
+  if (!ids || ids.length === 0) return 0;
+  const placeholders = ids.map(() => '?').join(',');
+  const result = exec(`DELETE FROM articles WHERE id IN (${placeholders})`, ids);
+  return result.changes;
+}
+
+/**
+ * 全記事を削除（オプションでステータス指定）
+ */
+export function deleteAllArticles(status = null) {
+  let sql = 'DELETE FROM articles';
+  const params = [];
+
+  if (status) {
+    sql += ' WHERE status = ?';
+    params.push(status);
+  }
+
+  const result = exec(sql, params);
+  return result.changes;
+}
+
+/**
  * 古い記事をアーカイブ（30日以上経過）
  */
 export function archiveOldArticles(days = 30) {

@@ -1,22 +1,44 @@
 import fs from 'fs-extra';
 import path from 'path';
 import dayjs from 'dayjs';
+import { fileURLToPath } from 'url';
 import config from '../config/env.js';
-import * as articleModel from '../models/article.model.js';
+import * as articleModel from '../models/article.model.js'
 import * as configModel from '../models/config.model.js';
 import { generateDailyNote } from '../utils/markdown.js';
 import logger from '../utils/logger.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// 設定ファイルのパス
+const SETTINGS_FILE = path.resolve(__dirname, '../../data/settings.json');
 
 /**
  * Obsidian Vault連携サービス
  */
 
 /**
+ * settings.jsonから設定を読み込む
+ */
+async function loadSettings() {
+  try {
+    if (await fs.pathExists(SETTINGS_FILE)) {
+      return await fs.readJson(SETTINGS_FILE);
+    }
+  } catch (error) {
+    logger.error('Failed to load settings:', error);
+  }
+  return {};
+}
+
+/**
  * Vault設定を取得
  */
-export function getVaultConfig() {
-  const vaultPath = configModel.getConfigValue('obsidian_vault_path', config.obsidianVaultPath);
-  const dailyNotePath = configModel.getConfigValue('obsidian_daily_note_path', config.obsidianDailyNotePath);
+export async function getVaultConfig() {
+  const settings = await loadSettings();
+  const vaultPath = settings.obsidianVaultPath || config.obsidianVaultPath || '';
+  const dailyNotePath = settings.obsidianDailyNotePath || config.obsidianDailyNotePath || 'Daily Notes';
 
   return {
     vaultPath,
@@ -56,7 +78,7 @@ export function updateVaultConfig(vaultPath, dailyNotePath) {
  * Daily Noteを生成
  */
 export async function generateDailyNoteFile(date = null, options = {}) {
-  const vaultConfig = getVaultConfig();
+  const vaultConfig = await getVaultConfig();
 
   if (!vaultConfig.enabled) {
     throw new Error('Obsidian vault is not configured');
@@ -110,7 +132,15 @@ export async function generateDailyNoteFile(date = null, options = {}) {
 
   // 指定日に収集された記事のみフィルター
   articles = articles.filter(article => {
-    const collectedDate = dayjs(article.collected_date);
+    // 簡易的なJST対応: UTC文字列と仮定して9時間足す
+    // DBには "YYYY-MM-DD HH:mm:ss" (UTC) で入っていると想定
+    const date = new Date(article.collected_date);
+    // タイムゾーン補正 (JST +9)
+    // ただし、new Date(string)の挙動は環境依存があるため、明示的にUTCとして扱う
+    // サーバーのタイムゾーンがJSTの場合、new Date("... UTC")扱いにならない場合がある
+    // 安全策として、dayjsを使って比較する
+    // DBの日時がUTCなら、+9時間すればJSTの日付になる
+    const collectedDate = dayjs(article.collected_date).add(9, 'hour');
     return collectedDate.format('YYYY-MM-DD') === dateStr;
   });
 
@@ -167,7 +197,7 @@ function categorizeArticles(articles) {
  * 個別記事のMarkdownファイルを生成
  */
 export async function generateArticleNote(articleId, templateType = 'default') {
-  const vaultConfig = getVaultConfig();
+  const vaultConfig = await getVaultConfig();
 
   if (!vaultConfig.enabled) {
     throw new Error('Obsidian vault is not configured');
@@ -254,8 +284,8 @@ export function checkVaultExists(vaultPath) {
 /**
  * Daily Notesの一覧を取得
  */
-export function listDailyNotes(limit = 30) {
-  const vaultConfig = getVaultConfig();
+export async function listDailyNotes(limit = 30) {
+  const vaultConfig = await getVaultConfig();
 
   if (!vaultConfig.enabled) {
     throw new Error('Obsidian vault is not configured');

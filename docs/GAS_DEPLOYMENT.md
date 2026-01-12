@@ -63,7 +63,7 @@ Google Apps Script (GAS)を使用して、以下のデータソースから情�
 
 #### 3.1 Code.gs の作成
 
-\`\`\`javascript
+```javascript
 // メイン処理
 function doGet(e) {
   return ContentService.createTextOutput(JSON.stringify({
@@ -91,6 +91,10 @@ function doPost(e) {
       case 'collect_qiita':
         result = collectQiita();
         break;
+      // [NEW] バックエンドからの記事保存用
+      case 'save_articles':
+        result = saveArticlesToSheet(params.articles);
+        break;
       default:
         result = { success: false, error: 'Unknown action' };
     }
@@ -104,6 +108,42 @@ function doPost(e) {
       error: error.toString()
     })).setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+// 記事データをシートに保存
+function saveArticlesToSheet(articles) {
+  if (!articles || !Array.isArray(articles)) {
+    return { success: false, error: 'Invalid articles data' };
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Articles');
+  let savedCount = 0;
+
+  articles.forEach(article => {
+    // 重複チェック (Frontend/Backendですでにされているが念のため)
+    if (!isDuplicate(article.url)) {
+      const row = [
+        '', // ID
+        article.source_type || 'manual',
+        article.source_name || 'Unknown',
+        article.title,
+        article.url,
+        article.description || '',
+        article.author || '',
+        article.published_date || '',
+        article.collected_date || new Date().toISOString()
+      ];
+
+      sheet.appendRow(row);
+      savedCount++;
+    }
+  });
+
+  return {
+    success: true,
+    message: `Saved ${savedCount} articles`,
+    saved_count: savedCount
+  };
 }
 
 // 全ソース収集
@@ -127,7 +167,7 @@ function testCollection() {
   const result = collectAllSources();
   Logger.log(result);
 }
-\`\`\`
+```
 
 #### 3.2 collectors/difyBlog.gs の作成
 

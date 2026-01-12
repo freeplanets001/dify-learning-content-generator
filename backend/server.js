@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import config, { validateRequiredEnvVars, printConfig } from './config/env.js';
 import logger, { logSystemEvent } from './utils/logger.js';
 import { initializeDatabase, checkAndUpgradeSchema } from './models/database.js';
@@ -10,6 +12,10 @@ import collectorRoutes from './routes/collector.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import obsidianRoutes from './routes/obsidian.routes.js';
 import contentRoutes from './routes/content.routes.js';
+import settingsRoutes from './routes/settings.routes.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -74,7 +80,8 @@ app.get('/api', (req, res) => {
       collector: '/api/collector',
       obsidian: '/api/obsidian',
       content: '/api/content',
-      dashboard: '/api/dashboard'
+      dashboard: '/api/dashboard',
+      settings: '/api/settings'
     }
   });
 });
@@ -86,6 +93,11 @@ app.use('/api/collector', collectorRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/obsidian', obsidianRoutes);
 app.use('/api/content', contentRoutes);
+app.use('/api/settings', settingsRoutes);
+
+// 静的ファイルサービング（スライド画像）
+// app.use('/slide-images', express.static(path.join(__dirname, '../data/slide-images')));
+// app.use('/slides', express.static(path.join(__dirname, '../data/slides')));
 
 /**
  * エラーハンドリングミドルウェア
@@ -136,12 +148,12 @@ async function startServer() {
 
     // データベース初期化
     console.log('🗄️  Initializing database...');
-    initializeDatabase();
+    await initializeDatabase();
     checkAndUpgradeSchema();
 
     // サーバー起動
-    app.listen(config.port, () => {
-      console.log(`🚀 Server is running on http://localhost:${config.port}`);
+    app.listen(config.port, '0.0.0.0', () => {
+      console.log(`🚀 Server is running on http://0.0.0.0:${config.port}`);
       console.log(`📝 Environment: ${config.nodeEnv}`);
       console.log(`📊 API Documentation: http://localhost:${config.port}/api`);
       console.log('');

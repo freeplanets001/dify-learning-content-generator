@@ -20,6 +20,16 @@ const navigation = [
     name: 'コンテンツ生成',
     path: '/content',
     icon: '✨'
+  },
+  {
+    name: '画像生成',
+    path: '/image-generator',
+    icon: '🎨'
+  },
+  {
+    name: '設定',
+    path: '/settings',
+    icon: '⚙️'
   }
 ];
 
@@ -35,8 +45,7 @@ function Sidebar() {
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
-              `flex items-center px-6 py-3 text-secondary-700 hover:bg-primary-50 hover:text-primary-600 transition-colors ${
-                isActive ? 'bg-primary-50 text-primary-600 border-r-4 border-primary-600' : ''
+              `flex items-center px-6 py-3 text-secondary-700 hover:bg-primary-50 hover:text-primary-600 transition-colors ${isActive ? 'bg-primary-50 text-primary-600 border-r-4 border-primary-600' : ''
               }`
             }
           >

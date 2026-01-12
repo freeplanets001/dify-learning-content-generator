@@ -89,30 +89,56 @@ export function generateDailyNote(date, articles) {
       sections.push('');
 
       items.forEach(article => {
-        sections.push(`### ${article.title}`);
+        // タイトルをリンク付きで表示
+        sections.push(`### [${article.title}](${article.url})`);
         sections.push('');
-        sections.push(`- **ソース**: ${article.source_name}`);
-        sections.push(`- **URL**: ${article.url}`);
 
-        if (article.author) {
-          sections.push(`- **著者**: ${article.author}`);
-        }
-
-        if (article.published_date) {
-          sections.push(`- **公開日**: ${article.published_date}`);
-        }
-
-        if (article.description) {
+        // 画像を表示（複数のソースをチェック）
+        const imageUrl = article.metadata?.ogImage || article.metadata?.image || article.image || article.metadata?.images?.[0];
+        if (imageUrl) {
+          sections.push(`![](${imageUrl})`);
           sections.push('');
-          sections.push(article.description);
+        }
+
+        // メタ情報をシンプルに
+        const metaInfo = [];
+        metaInfo.push(`📌 **${article.source_name}**`);
+        if (article.author) metaInfo.push(`✍️ ${article.author}`);
+        if (article.published_date) metaInfo.push(`📅 ${article.published_date}`);
+        sections.push(metaInfo.join(' | '));
+        sections.push('');
+
+        // 概要
+        if (article.description) {
+          sections.push('> ' + article.description.replace(/\n/g, ' '));
+          sections.push('');
+        }
+
+        // 全文（フォーマット改善）
+        if (article.content) {
+          sections.push('#### 📖 本文');
+          sections.push('');
+
+          // 長すぎる場合は最初の30000文字のみ
+          let contentPreview = article.content.length > 30000
+            ? article.content.substring(0, 30000) + '\n\n*(...続きはリンク先で)*'
+            : article.content;
+
+          // 改行を適度に整理
+          const formattedContent = contentPreview
+            // 3つ以上の連続する改行を2つに
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+
+          sections.push(formattedContent);
+          sections.push('');
         }
 
         if (article.tags && article.tags.length > 0) {
-          sections.push('');
           sections.push(`**Tags**: ${article.tags.map(tag => `#${tag}`).join(' ')}`);
+          sections.push('');
         }
 
-        sections.push('');
         sections.push('---');
         sections.push('');
       });

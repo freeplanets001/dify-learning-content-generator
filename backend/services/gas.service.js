@@ -1,6 +1,7 @@
 import axios from 'axios';
 import config from '../config/env.js';
 import logger from '../utils/logger.js';
+import SettingsService from './settings.service.js';
 
 /**
  * Google Apps Script Web Appとの連携サービス
@@ -10,7 +11,10 @@ import logger from '../utils/logger.js';
  * GAS Web Appにリクエストを送信
  */
 export async function callGasWebApp(action, params = {}) {
-  const gasUrl = config.gasWebAppUrl;
+  // 設定ファイルから最新のURLを取得
+  const settingsService = new SettingsService();
+  const settings = await settingsService.getRawSettings();
+  const gasUrl = settings.gasWebAppUrl || config.gasWebAppUrl;
 
   if (!gasUrl) {
     throw new Error('GAS_WEB_APP_URL is not configured');
@@ -93,6 +97,15 @@ export async function triggerCollectZenn() {
 }
 
 /**
+ * スライド生成（GAS経由）
+ * @param {Array} slides - スライドデータの配列
+ * @param {Object} metadata - メタデータ（タイトル等）
+ */
+export async function generateSlides(slides, metadata) {
+  return await callGasWebApp('create_slides', { slides, metadata });
+}
+
+/**
  * GAS Web Appのヘルスチェック
  */
 export async function checkGasHealth() {
@@ -129,6 +142,31 @@ export async function executeCustomAction(action, params) {
   return await callGasWebApp(action, params);
 }
 
+/**
+ * 記事データをGASへ同期（保存）
+ */
+export async function syncArticlesToGas(articles) {
+  if (!articles || articles.length === 0) {
+    return { success: true, message: 'No articles to sync' };
+  }
+
+  // GAS側で扱いやすい形式に変換
+  const payload = articles.map(article => ({
+    title: article.title,
+    url: article.url,
+    description: article.description || '',
+    source_name: article.source_name,
+    source_type: article.source_type,
+    author: article.author || '',
+    published_date: article.published_date,
+    collected_date: new Date().toISOString()
+  }));
+
+  // GASへ送信
+  // GAS側で 'save_articles' アクションを実装する必要がある
+  return await callGasWebApp('save_articles', { articles: payload });
+}
+
 export default {
   callGasWebApp,
   triggerCollectAll,
@@ -137,5 +175,6 @@ export default {
   triggerCollectQiita,
   triggerCollectZenn,
   checkGasHealth,
-  executeCustomAction
+  executeCustomAction,
+  syncArticlesToGas
 };

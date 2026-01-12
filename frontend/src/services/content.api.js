@@ -7,45 +7,55 @@ import api from './api';
 // テンプレート一覧を取得
 export const getTemplates = () => api.get('/api/content/templates');
 
-// コンテンツを生成
-export const generateContent = (data) => api.post('/api/content/generate', data);
+// コンテンツを生成 (GAS未実装 - dummy)
+export const generateContent = (data) => Promise.resolve({ data: { id: Date.now(), ...data } });
 
-// コンテンツをプレビュー
-export const previewContent = (data) => api.post('/api/content/preview', data);
+// コンテンツをプレビュー (GAS未実装 - dummy)
+export const previewContent = (data) => Promise.resolve({ data: { preview: 'dummy preview content' } });
 
-// バッチ生成
-export const batchGenerate = (data) => api.post('/api/content/batch-generate', data);
+// バッチ生成 (GAS未実装 - dummy)
+export const batchGenerate = (data) => Promise.resolve({ data: [] });
 
 // コンテンツ一覧を取得
-export const getContents = (params = {}) => api.get('/api/content', { params });
+export const getContents = (params = {}) => api.content.getList(params)
+  .then(data => ({ data: data }));
 
-// コンテンツ詳細を取得
-export const getContent = (id) => api.get(`/api/content/${id}`);
+// コンテンツ詳細を取得 (GASのリストから検索)
+export const getContent = (id) => api.content.getList()
+  .then(data => {
+    const content = data.find(c => c.id == id);
+    return { data: content || null };
+  });
 
-// コンテンツを更新
-export const updateContent = (id, data) => api.patch(`/api/content/${id}`, data);
+// コンテンツを作成 (手動作成: GAS未実装 - dummy)
+export const createContent = (data) => Promise.resolve({ data: { id: Date.now(), ...data } });
 
-// コンテンツを承認
-export const approveContent = (id, approvedBy = 'user') =>
-  api.post(`/api/content/${id}/approve`, { approvedBy });
+// コンテンツを更新 (GAS未実装 - dummy)
+export const updateContent = (id, data) => Promise.resolve({ data: { id, ...data } });
 
-// コンテンツを却下
-export const rejectContent = (id, reason = null) =>
-  api.post(`/api/content/${id}/reject`, { reason });
+// コンテンツを削除 (GAS未実装 - dummy)
+export const deleteContent = (id) => Promise.resolve({ data: { success: true } });
 
-// コンテンツを再生成
-export const regenerateContent = (id, options = {}) =>
-  api.post(`/api/content/${id}/regenerate`, options);
+// コンテンツ承認 (GAS未実装 - dummy)
+export const approveContent = (id) => Promise.resolve({ data: { success: true, status: 'approved' } });
 
-// コンテンツを削除
-export const deleteContent = (id) => api.delete(`/api/content/${id}`);
+// コンテンツ却下 (GAS未実装 - dummy)
+export const rejectContent = (id, reason) => Promise.resolve({ data: { success: true, status: 'rejected' } });
 
-// 承認待ちコンテンツを取得
-export const getPendingApprovalContents = (limit = 20) =>
-  api.get('/api/content/pending/approval', { params: { limit } });
+// コンテンツを再生成 (GAS未実装 - dummy)
+export const regenerateContent = (id, options = {}) => Promise.resolve({ data: { id, ...options, regenerated: true } });
 
-// 統計情報を取得
-export const getStats = () => api.get('/api/content/stats');
+// 承認待ち一覧を取得 (GAS未実装 - dummy)
+export const getPendingContents = () => Promise.resolve({ data: [] });
+
+// 統計情報を取得 (GAS未実装 - dummy)
+export const getStats = () => Promise.resolve({
+  data: {
+    total_contents: 0,
+    approved_count: 0,
+    rejected_count: 0
+  }
+});
 
 export default {
   getTemplates,
@@ -54,11 +64,12 @@ export default {
   batchGenerate,
   getContents,
   getContent,
+  createContent,
   updateContent,
+  deleteContent,
   approveContent,
   rejectContent,
   regenerateContent,
-  deleteContent,
-  getPendingApprovalContents,
+  getPendingContents,
   getStats
 };

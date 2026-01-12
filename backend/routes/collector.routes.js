@@ -1,5 +1,6 @@
 import express from 'express';
-import * as collectorService from '../services/collector.service.js';
+import collectorService from '../services/collector.service.js';
+import * as urlService from '../services/url.service.js';
 import * as articleModel from '../models/article.model.js';
 import * as configModel from '../models/config.model.js';
 import { validatePagination, formatSuccessResponse, formatErrorResponse } from '../utils/validator.js';
@@ -27,14 +28,11 @@ router.get('/status', (req, res) => {
  */
 router.post('/trigger', async (req, res) => {
   try {
-    const { sourceId, source, method = 'direct' } = req.body;
+    const { sourceId, source } = req.body;
 
     let result;
 
-    if (method === 'gas') {
-      // GAS経由で収集
-      result = await collectorService.triggerGasCollection();
-    } else if (sourceId) {
+    if (sourceId) {
       // 特定のソースから収集
       result = await collectorService.collectFromSourceById(sourceId);
     } else if (source) {
@@ -185,6 +183,30 @@ router.delete('/articles/:id', (req, res) => {
 });
 
 /**
+ * POST /api/collector/articles/batch-delete
+ * 記事を一括削除
+ */
+router.post('/articles/batch-delete', (req, res) => {
+  try {
+    const { ids, all, status } = req.body;
+    let count = 0;
+
+    if (all) {
+      count = articleModel.deleteAllArticles(status);
+    } else if (Array.isArray(ids) && ids.length > 0) {
+      count = articleModel.deleteArticles(ids);
+    } else {
+      return res.status(400).json(formatErrorResponse('No IDs provided'));
+    }
+
+    res.json(formatSuccessResponse({ count }, `${count} articles deleted`));
+  } catch (error) {
+    logApiError('/api/collector/articles/batch-delete', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
  * GET /api/collector/sources
  * データソース一覧を取得
  */
@@ -291,6 +313,8 @@ router.post('/sources/:id/toggle', (req, res) => {
   }
 });
 
+
+
 /**
  * DELETE /api/collector/sources/:id
  * データソースを削除
@@ -298,10 +322,13 @@ router.post('/sources/:id/toggle', (req, res) => {
 router.delete('/sources/:id', (req, res) => {
   try {
     const { id } = req.params;
+    logger.info(`Received DELETE request for source ID: ${id}`);
     const deleted = configModel.deleteDataSource(parseInt(id));
 
     if (!deleted) {
-      return res.status(404).json(formatErrorResponse('Source not found'));
+      // 既に削除されている場合も成功として扱い、画面側でリスト更新させる（冪等性）
+      logger.warn(`Source with ID ${id} not found during delete (treated as success)`);
+      return res.json(formatSuccessResponse({ deleted: false }, 'Source already deleted'));
     }
 
     res.json(formatSuccessResponse({ deleted: true }, 'Source deleted'));
@@ -330,4 +357,100 @@ router.get('/stats', (req, res) => {
   }
 });
 
+/**
+ * POST /api/collector/url
+ * URLからコンテンツを収集
+ */
+router.post('/url', async (req, res) => {
+  try {
+    const { url, urls, sourceName = 'URL Import', save = true } = req.body;
+
+    // 単一URLまたは複数URLを処理
+    const targetUrls = urls || (url ? [url] : []);
+
+    if (targetUrls.length === 0) {
+      return res.status(400).json(formatErrorResponse('URL is required'));
+    }
+
+    // URLコンテンツを取得
+    const results = [];
+    const articlesToSave = []; // 同期用に記事を収集
+
+    for (const targetUrl of targetUrls) {
+      const result = await urlService.fetchUrlContent(targetUrl);
+
+      if (result.success && save) {
+        // 記事として正規化
+        const article = urlService.normalizeUrlContent(result.data, sourceName);
+
+        // 重複チェック
+        const existing = articleModel.findArticleByUrl(targetUrl);
+        if (!existing) {
+          articlesToSave.push(article);
+          result.saved = true;
+        } else {
+          result.saved = false;
+          result.duplicate = true;
+        }
+      }
+
+      results.push(result);
+    }
+
+    // saveArticlesを使用して保存（GAS/Obsidian同期を含む）
+    let saved = 0;
+    let duplicates = results.filter(r => r.duplicate).length;
+
+    if (articlesToSave.length > 0) {
+      const saveResult = await collectorService.saveArticles(articlesToSave);
+      saved = saveResult.saved;
+      duplicates += saveResult.duplicates;
+
+      logger.info(`URL collection completed with sync`, {
+        saved: saveResult.saved,
+        duplicates: saveResult.duplicates
+      });
+    }
+
+    const failed = results.filter(r => !r.success).length;
+
+    res.json(formatSuccessResponse({
+      total: targetUrls.length,
+      saved,
+      duplicates,
+      failed,
+      results
+    }, `${saved} URLs collected and synced`));
+  } catch (error) {
+    logApiError('/api/collector/url', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
+/**
+ * POST /api/collector/url/preview
+ * URLからコンテンツをプレビュー（保存せず）
+ */
+router.post('/url/preview', async (req, res) => {
+  try {
+    const { url } = req.body;
+
+    if (!url) {
+      return res.status(400).json(formatErrorResponse('URL is required'));
+    }
+
+    const result = await urlService.fetchUrlContent(url);
+
+    if (!result.success) {
+      return res.status(400).json(formatErrorResponse(result.error));
+    }
+
+    res.json(formatSuccessResponse(result.data, 'Content extracted'));
+  } catch (error) {
+    logApiError('/api/collector/url/preview', error);
+    res.status(500).json(formatErrorResponse(error.message));
+  }
+});
+
 export default router;
+

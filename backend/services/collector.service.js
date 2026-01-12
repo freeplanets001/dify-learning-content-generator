@@ -160,10 +160,17 @@ async function collectFromGas(source) {
 /**
  * 記事をデータベースに保存（重複チェック付き）
  */
+import * as obsidianService from './obsidian.service.js';
+import * as scraperService from './scraper.service.js';
+
+/**
+ * 記事をデータベースに保存（重複チェック付き）
+ */
 async function saveArticles(articles) {
   let saved = 0;
   let duplicates = 0;
   const errors = [];
+  const newArticles = []; // 新規保存された記事（同期用）
 
   for (const article of articles) {
     try {
@@ -176,9 +183,33 @@ async function saveArticles(articles) {
         continue;
       }
 
+      // [New] 全文取得（スクレイピング）
+      // コンテンツが空、または短すぎる場合（500文字未満）はスクレイピングを試みる
+      if (!article.content || article.content.length < 500) {
+        const scrapeResult = await scraperService.fetchArticleContent(article.url);
+        // 取得したコンテンツが元のコンテンツより長い場合のみ更新
+        if (scrapeResult) {
+          const fullContent = scrapeResult.content || scrapeResult;
+          if (typeof fullContent === 'string' && fullContent.length > (article.content?.length || 0)) {
+            article.content = fullContent;
+            // 画像情報も保存
+            if (scrapeResult.images && scrapeResult.images.length > 0) {
+              article.metadata = article.metadata || {};
+              article.metadata.images = scrapeResult.images;
+            }
+            if (scrapeResult.ogImage) {
+              article.metadata = article.metadata || {};
+              article.metadata.ogImage = scrapeResult.ogImage;
+            }
+            logger.debug(`Enriched content for: ${article.title} (${fullContent.length} chars, ${scrapeResult.images?.length || 0} images)`);
+          }
+        }
+      }
+
       // 新規記事を保存
       articleModel.createArticle(article);
       saved++;
+      newArticles.push(article);
 
       logger.debug(`Saved article: ${article.title}`);
     } catch (error) {
@@ -191,6 +222,38 @@ async function saveArticles(articles) {
         error: error.message
       });
     }
+  }
+
+  // 同期処理（非同期で実行し、ユーザーへのレスポンスは待たせない）
+  if (newArticles.length > 0) {
+    (async () => {
+      try {
+        // 1. Google Sheetsへ同期
+        // 設定はgasService内部で動的に読み込まれるため、ここでは常に呼び出す
+        logger.info(`Syncing ${newArticles.length} articles to GAS...`);
+        await gasService.syncArticlesToGas(newArticles);
+
+        // 2. Obsidianへ同期 (Daily Note)
+        const vaultConfig = await obsidianService.getVaultConfig();
+        if (vaultConfig.enabled) {
+          logger.info(`Syncing ${newArticles.length} articles to Obsidian...`);
+          // 本日のDaily Noteを更新（新規記事を含む）
+          const noteResult = await obsidianService.generateDailyNoteFile(null, {
+            includeUnprocessed: true,
+            includeProcessed: true,
+            markAsProcessed: true // 同期後にステータスを処理済みに更新
+          });
+
+          logger.info(`Obsidian sync completed`, {
+            date: noteResult.date,
+            path: noteResult.filePath,
+            items: noteResult.articleCount
+          });
+        }
+      } catch (syncError) {
+        logger.error('Background sync failed:', syncError);
+      }
+    })();
   }
 
   return { saved, duplicates, errors };
@@ -277,9 +340,7 @@ export async function collectZenn() {
  * GASトリガー経由で全ソース収集
  */
 export async function triggerGasCollection() {
-  if (!config.gasWebAppUrl) {
-    throw new Error('GAS Web App URL is not configured');
-  }
+
 
   const result = await gasService.triggerCollectAll();
 
@@ -325,5 +386,6 @@ export default {
   collectQiita,
   collectZenn,
   triggerGasCollection,
-  getCollectionStatus
+  getCollectionStatus,
+  saveArticles
 };

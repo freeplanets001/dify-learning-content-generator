@@ -9,9 +9,9 @@ const router = express.Router();
  * GET /api/obsidian/config
  * Vault設定を取得
  */
-router.get('/config', (req, res) => {
+router.get('/config', async (req, res) => {
   try {
-    const config = obsidianService.getVaultConfig();
+    const config = await obsidianService.getVaultConfig();
     res.json(formatSuccessResponse(config));
   } catch (error) {
     logApiError('/api/obsidian/config', error);
@@ -110,10 +110,10 @@ router.post('/article-note/:id', async (req, res) => {
  * GET /api/obsidian/daily-notes
  * Daily Notesの一覧を取得
  */
-router.get('/daily-notes', (req, res) => {
+router.get('/daily-notes', async (req, res) => {
   try {
     const { limit = 30 } = req.query;
-    const notes = obsidianService.listDailyNotes(parseInt(limit));
+    const notes = await obsidianService.listDailyNotes(parseInt(limit));
     res.json(formatSuccessResponse(notes));
   } catch (error) {
     logApiError('/api/obsidian/daily-notes', error);

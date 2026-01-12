@@ -1,8 +1,14 @@
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   content: [
-    "./index.html",
-    "./src/**/*.{js,jsx,ts,tsx}",
+    resolve(__dirname, './index.html'),
+    resolve(__dirname, './src/**/*.{js,jsx,ts,tsx}'),
   ],
   theme: {
     extend: {
@@ -40,3 +46,4 @@ module.exports = {
   },
   plugins: [],
 }
+
