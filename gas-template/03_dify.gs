@@ -49,16 +49,22 @@ function callDifyWorkflow(inputs) {
   
   if (responseCode !== 200) {
     console.error('Dify API Error:', responseCode, responseText);
-    throw new Error(`Dify API Error: ${responseCode}`);
+    throw new Error(`Dify API Error: ${responseCode} - ${responseText}`);
   }
   
   const result = JSON.parse(responseText);
+  console.log('Dify Response:', JSON.stringify(result)); // Debug log
   
   if (result.data && result.data.outputs) {
     return result.data.outputs;
   }
   
-  throw new Error('Dify APIから出力がありませんでした');
+  // ワークフローのステータスチェック
+  if (result.data && result.data.status !== 'succeeded') {
+     console.warn('Dify Workflow Status:', result.data.status);
+  }
+
+  throw new Error('Dify APIから有効な出力がありませんでした: ' + JSON.stringify(result));
 }
 
 // === コンテンツ生成 ===
@@ -67,11 +73,15 @@ function callDifyWorkflow(inputs) {
  * 記事からコンテンツを生成
  */
 function generateContent(articleId, templateId) {
+  console.log(`generateContent called: articleId=${articleId}, templateId=${templateId}`);
+  
   const article = getArticleById(articleId);
   
   if (!article) {
-    throw new Error('記事が見つかりません');
+    console.error(`Article not found: id=${articleId}`);
+    throw new Error(`記事が見つかりません (ID: ${articleId})`);
   }
+  console.log('Article found:', article.title);
   
   const template = TEMPLATES.find(t => t.id === templateId) || TEMPLATES[0];
   

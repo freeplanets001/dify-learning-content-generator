@@ -8,7 +8,14 @@ import api from './api';
 export const getTemplates = () => api.get('/api/content/templates');
 
 // コンテンツを生成 (GAS未実装 - dummy)
-export const generateContent = (data) => Promise.resolve({ data: { id: Date.now(), ...data } });
+// コンテンツを生成
+export const generateContent = (data) => {
+  // data: { articleId, templateType, useDify }
+  // useDify flag is handled by GAS based on config, or we can pass it if supported.
+  // For now, api-adapter supports generate(articleId, templateId).
+  return api.content.generate(data.articleId, data.templateType)
+    .then(res => ({ data: { success: true, content: res } }));
+};
 
 // コンテンツをプレビュー (GAS未実装 - dummy)
 export const previewContent = (data) => Promise.resolve({ data: { preview: 'dummy preview content' } });
