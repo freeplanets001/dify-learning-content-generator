@@ -1,30 +1,41 @@
 /**
- * 02_rss.gs - RSS収集
- * RSSフィードから記事を収集
+ * 02_rss.gs - RSS収集ロジック
+ * RSSフィードの取得、パース、記事の保存
  */
-
-// === RSS収集 ===
 
 /**
- * 全RSSソースから収集
+ * すべての有効なRSSソースから記事を収集
+ * (UIやAPIから呼び出し、または時間トリガー)
  */
 function collectAllRss() {
-  const sources = getRssSources();
-  const enabledSources = sources.filter(s => s.enabled);
-  
-  if (enabledSources.length === 0) {
-    SpreadsheetApp.getUi().alert('⚠️ 有効なRSSソースがありません。\n\n「📡RSSソース」シートにRSSフィードを追加してください。');
-    return { total: 0, sources: 0 };
-  }
-  
+  const sources = getEnabledRssSources();
   let totalCollected = 0;
   const results = [];
   
-  for (const source of enabledSources) {
+  // Dify設定を取得 (RSS要約などに使えるかもしれないが、現状は未使用)
+  // const config = getDifyConfig();
+  
+  for (const source of sources) {
     try {
-      const collected = collectFromRssSource(source);
-      totalCollected += collected;
-      results.push({ source: source.name, collected: collected, success: true });
+      const articles = fetchRssFeed(source.url);
+      let count = 0;
+      
+      for (const article of articles) {
+        // 重複チェック
+        if (!isArticleExists(article.link)) {
+          saveArticle({
+            title: article.title,
+            url: article.link,
+            source: source.name,
+            summary: article.summary, // RSSに含まれる概要
+            status: 'new'
+          });
+          count++;
+        }
+      }
+      
+      totalCollected += count;
+      results.push({ source: source.name, collected: count, success: true });
       
       // 最終収集日を更新
       updateRssSourceLastCollected(source.id);
@@ -34,170 +45,145 @@ function collectAllRss() {
     }
   }
   
+  SpreadsheetApp.flush(); // 即時反映 (重要: 連続実行時の読み取り遅延を防ぐ)
   console.log(`RSS収集完了: ${totalCollected}件`);
-  return { total: totalCollected, sources: enabledSources.length, results: results };
+  return { total: totalCollected, sources: sources.length, results: results };
 }
 
 /**
- * 単一RSSソースから収集
+ * 指定URLの記事を収集 (単発インポート)
  */
-function collectFromRssSource(source) {
-  const response = UrlFetchApp.fetch(source.url, {
-    muteHttpExceptions: true,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; RSS Reader/1.0)'
-    }
-  });
-  
-  if (response.getResponseCode() !== 200) {
-    throw new Error(`HTTP Error: ${response.getResponseCode()}`);
-  }
-  
-  const content = response.getContentText();
-  const articles = parseRssFeed(content, source.name);
-  
-  // 重複チェックして保存
-  let saved = 0;
-  for (const article of articles) {
-    if (!isArticleExists(article.url)) {
-      saveArticle(article);
-      saved++;
-    }
-  }
-  
-  return saved;
-}
-
-/**
- * RSSフィードをパース
- */
-function parseRssFeed(xmlContent, sourceName) {
-  const articles = [];
-  
+function collectFromUrl(url, sourceName = 'Manual Import') {
   try {
-    const doc = XmlService.parse(xmlContent);
-    const root = doc.getRootElement();
+    // スクレイピング (簡易的)
+    // GASのUrlFetchAppでHTMLを取得
+    const response = UrlFetchApp.fetch(url);
+    const html = response.getContentText();
     
-    // RSS 2.0 or Atom
-    const ns = root.getNamespace();
-    let items = [];
+    // タイトル抽出 (正規表現で簡易抽出)
+    const titleMatch = html.match(/<title>(.*?)<\/title>/);
+    const title = titleMatch ? titleMatch[1] : url;
     
-    if (root.getName() === 'rss') {
-      // RSS 2.0
-      const channel = root.getChild('channel');
-      items = channel.getChildren('item');
-      
-      for (const item of items) {
-        const title = item.getChildText('title') || '';
-        const link = item.getChildText('link') || '';
-        const description = item.getChildText('description') || '';
-        const pubDate = item.getChildText('pubDate') || '';
-        
-        if (title && link) {
-          articles.push({
-            title: cleanText(title),
-            url: link,
-            source: sourceName,
-            summary: cleanHtml(description).substring(0, 500),
-            publishedAt: parseDate(pubDate),
-            status: 'new'
-          });
-        }
-      }
-    } else if (root.getName() === 'feed') {
-      // Atom
-      const atomNs = XmlService.getNamespace('http://www.w3.org/2005/Atom');
-      items = root.getChildren('entry', atomNs);
-      
-      for (const item of items) {
-        const title = item.getChildText('title', atomNs) || '';
-        const linkEl = item.getChild('link', atomNs);
-        const link = linkEl ? linkEl.getAttribute('href').getValue() : '';
-        const summary = item.getChildText('summary', atomNs) || item.getChildText('content', atomNs) || '';
-        const updated = item.getChildText('updated', atomNs) || '';
-        
-        if (title && link) {
-          articles.push({
-            title: cleanText(title),
-            url: link,
-            source: sourceName,
-            summary: cleanHtml(summary).substring(0, 500),
-            publishedAt: parseDate(updated),
-            status: 'new'
-          });
-        }
-      }
+    // 本文抽出などは高度なパースが必要だが、ここでは簡易的に保存
+    const article = {
+      title: title,
+      url: url,
+      source: sourceName,
+      summary: 'Imported by URL',
+      status: 'new'
+    };
+    
+    // 重複チェック
+    if (isArticleExists(url)) {
+      return { success: false, error: 'この記事は既に収集済みです' };
     }
-  } catch (error) {
-    console.error('RSSパースエラー:', error);
-    throw new Error(`RSSパースエラー: ${error.message}`);
+    
+    saveArticle(article);
+    SpreadsheetApp.flush(); // 即時反映 (重要)
+    
+    return { success: true, title: title };
+  } catch (e) {
+    console.error('URL収集エラー:', e);
+    return { success: false, error: e.message };
   }
-  
-  return articles;
 }
 
-// === RSSソース管理 ===
+// === 内部関数 ===
 
 /**
- * RSSソース一覧を取得
+ * 有効なRSSソースを取得
  */
-function getRssSources() {
+function getEnabledRssSources() {
   const sheet = getOrCreateSheet(SHEET_NAMES.RSS_SOURCES);
   const data = sheet.getDataRange().getValues();
   const sources = [];
   
+  // ヘッダーを除外 (1行目から)
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    if (row[1] && row[2]) {  // 名前とURLがあれば
+    // ID, 名前, URL, 有効フラグ
+    if (row[2] && row[3] === true) {
       sources.push({
-        id: row[0] || i,
+        id: row[0],
         name: row[1],
-        url: row[2],
-        enabled: row[3] === true || row[3] === 'TRUE' || row[3] === '✓' || row[3] === 1,
-        lastCollected: row[4]
+        url: row[2]
       });
     }
   }
-  
   return sources;
 }
 
 /**
- * RSSソースを追加
+ * RSSソースの最終収集日を更新
  */
-function addRssSource(name, url, enabled = true) {
-  const sheet = getOrCreateSheet(SHEET_NAMES.RSS_SOURCES);
-  const lastRow = sheet.getLastRow();
-  const newId = lastRow;
-  
-  sheet.appendRow([newId, name, url, enabled ? '✓' : '', '']);
-  return newId;
-}
-
-/**
- * 最終収集日を更新
- */
-function updateRssSourceLastCollected(sourceId) {
+function updateRssSourceLastCollected(id) {
   const sheet = getOrCreateSheet(SHEET_NAMES.RSS_SOURCES);
   const data = sheet.getDataRange().getValues();
+  const now = new Date();
   
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] == sourceId || i == sourceId) {
-      sheet.getRange(i + 1, 5).setValue(new Date());
+    if (data[i][0] === id) {
+      sheet.getRange(i + 1, 5).setValue(now);
       break;
     }
   }
 }
 
-// === 記事管理 ===
+/**
+ * RssParserのような機能 (XMLパース)
+ * GASのXmlServiceを使用
+ */
+function fetchRssFeed(feedUrl) {
+  const articles = [];
+  try {
+    const xml = UrlFetchApp.fetch(feedUrl).getContentText();
+    const document = XmlService.parse(xml);
+    const root = document.getRootElement();
+    
+    // Atom vs RSS 2.0 対応
+    let entries = [];
+    const namespace = root.getNamespace();
+    
+    if (root.getName() === 'feed') {
+      // Atom
+      entries = root.getChildren('entry', namespace);
+      for (const entry of entries) {
+        const title = entry.getChild('title', namespace).getText();
+        const link = entry.getChild('link', namespace).getAttribute('href').getValue();
+        const summary = entry.getChild('summary', namespace)?.getText() || '';
+        if (title && link) {
+          articles.push({ title, link, summary });
+        }
+      }
+    } else {
+      // RSS 2.0
+      const channel = root.getChild('channel');
+      if (channel) {
+        entries = channel.getChildren('item');
+        for (const item of entries) {
+          const title = item.getChild('title').getText();
+          const link = item.getChild('link').getText();
+          const description = item.getChild('description')?.getText() || '';
+          if (title && link) {
+            articles.push({ title, link, summary: description });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`RSS Parse Error (${feedUrl}):`, e);
+  }
+  return articles;
+}
 
 /**
- * 記事が存在するかチェック
+ * 記事が既にあるかチェック (URL一致)
  */
 function isArticleExists(url) {
   const sheet = getOrCreateSheet(SHEET_NAMES.ARTICLES);
   const data = sheet.getDataRange().getValues();
   
+  // URLは3列目 (index 2)
   for (let i = 1; i < data.length; i++) {
     if (data[i][2] === url) {
       return true;
@@ -212,9 +198,9 @@ function isArticleExists(url) {
 function saveArticle(article) {
   const sheet = getOrCreateSheet(SHEET_NAMES.ARTICLES);
   const lastRow = sheet.getLastRow();
-  const newId = lastRow;
+  const newId = lastRow; // 簡易ID (行番号-1の方が良いが、ここでは単純に行数)
   
-  sheet.appendRow([
+  const rowData = [
     newId,
     article.title,
     article.url,
@@ -222,9 +208,55 @@ function saveArticle(article) {
     new Date(),
     article.summary || '',
     article.status || 'new'
-  ]);
+  ];
   
-  return newId;
+  sheet.getRange(lastRow + 1, 1, 1, 7).setValues([rowData]);
+}
+
+/**
+ * RSSソースを取得
+ */
+function getRssSources() {
+  const sheet = getOrCreateSheet(SHEET_NAMES.RSS_SOURCES);
+  const data = sheet.getDataRange().getValues();
+  const sources = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (row[0]) {
+      sources.push({
+        id: row[0],
+        name: row[1],
+        url: row[2],
+        enabled: row[3],
+        lastCollected: row[4]
+      });
+    }
+  }
+  return sources;
+}
+
+/**
+ * RSSソースを保存
+ */
+function saveRssSource(source) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.RSS_SOURCES);
+  const lastRow = sheet.getLastRow();
+  
+  // 新規追加のみ対応 (編集はスプレッドシート直接で)
+  const newId = lastRow;
+  
+  const rowData = [
+    newId,
+    source.name,
+    source.url,
+    true, // enabled
+    '' // lastCollected
+  ];
+  
+  sheet.getRange(lastRow + 1, 1, 1, 5).setValues([rowData]);
+  SpreadsheetApp.flush();
+  return { id: newId, ...source };
 }
 
 /**
@@ -233,120 +265,26 @@ function saveArticle(article) {
 function getArticles(limit = 50) {
   const sheet = getOrCreateSheet(SHEET_NAMES.ARTICLES);
   const data = sheet.getDataRange().getValues();
+  
+  // ヘッダー除外
   const articles = [];
-  
-  for (let i = Math.min(data.length - 1, limit); i >= 1; i--) {
+  // 新しい順に取得 (後ろから)
+  for (let i = data.length - 1; i >= 1; i--) {
     const row = data[i];
-    articles.push({
-      id: row[0],
-      title: row[1],
-      url: row[2],
-      source: row[3],
-      collectedAt: row[4],
-      summary: row[5],
-      status: row[6]
-    });
-  }
-  
-  return articles.reverse();
-}
-
-// === ユーティリティ ===
-
-/**
- * HTMLタグを除去
- */
-function cleanHtml(html) {
-  if (!html) return '';
-  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
-}
-
-/**
- * テキストをクリーン
- */
-function cleanText(text) {
-  if (!text) return '';
-  return text.replace(/[\n\r\t]+/g, ' ').trim();
-}
-
-/**
- * 日付をパース
- */
-function parseDate(dateStr) {
-  if (!dateStr) return new Date();
-  try {
-    return new Date(dateStr);
-  } catch (e) {
-    return new Date();
-  }
-}
-
-// === URL収集 ===
-
-/**
- * URLから記事を収集
- */
-function collectFromUrl(url, sourceName = 'URL Import') {
-  try {
-    const response = UrlFetchApp.fetch(url, {
-      muteHttpExceptions: true,
-      followRedirects: true,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; ContentScraper/1.0)'
-      }
-    });
-    
-    if (response.getResponseCode() !== 200) {
-      throw new Error(`HTTP Error: ${response.getResponseCode()}`);
+    if (row[0]) {
+      // ステータスフィルタなどはここに追加可能
+      articles.push({
+        id: row[0],
+        title: row[1],
+        url: row[2],
+        source: row[3],
+        collectedAt: row[4],
+        summary: row[5],
+        status: row[6]
+      });
     }
-    
-    const html = response.getContentText();
-    const title = extractTitle(html);
-    const content = extractContent(html);
-    
-    if (isArticleExists(url)) {
-      return { success: false, message: '既に収集済みです' };
-    }
-    
-    const articleId = saveArticle({
-      title: title,
-      url: url,
-      source: sourceName,
-      summary: content.substring(0, 500),
-      status: 'new'
-    });
-    
-    return { success: true, articleId: articleId, title: title };
-  } catch (error) {
-    console.error('URL収集エラー:', error);
-    return { success: false, message: error.message };
+    if (articles.length >= limit) break;
   }
-}
-
-/**
- * HTMLからタイトル抽出
- */
-function extractTitle(html) {
-  const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  return match ? cleanText(match[1]) : 'Untitled';
-}
-
-/**
- * HTMLからコンテンツ抽出 (簡易版)
- */
-function extractContent(html) {
-  // 本文っぽい部分を抽出
-  let content = html;
   
-  // script, style タグを除去
-  content = content.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
-  content = content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
-  
-  // HTMLタグを除去
-  content = cleanHtml(content);
-  
-  // 連続するスペースを整理
-  content = content.replace(/\s+/g, ' ').trim();
-  
-  return content;
+  return articles;
 }

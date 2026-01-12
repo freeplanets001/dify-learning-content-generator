@@ -103,7 +103,22 @@ function isConfigured() {
   return !!(config.apiKey && config.workflowId);
 }
 
-// === 初期設定 ===
+// === 初期設定・権限 ===
+
+/**
+ * 全機能の権限をリクエスト
+ * (UrlFetchApp, DriveAppなどをダミーで呼び出し、ユーザーに承認させる)
+ */
+function authorizeScopes() {
+  // 外部通信
+  const response = UrlFetchApp.fetch('https://www.google.com');
+  // Google Drive
+  const files = DriveApp.getFiles();
+  // Spreadsheet
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  SpreadsheetApp.getUi().alert('✅ 全ての権限が承認されました。Webアプリからこれらの機能を利用できます。');
+}
 
 /**
  * スプレッドシートを初期化
@@ -129,7 +144,36 @@ function initializeSpreadsheet() {
   // メニューを追加
   createCustomMenu();
   
-  SpreadsheetApp.getUi().alert('✅ 初期設定が完了しました！\n\nメニュー「📚コンテンツ生成ツール」→「⚙️設定」からDify APIキーを設定してください。');
+  SpreadsheetApp.getUi().alert('✅ 初期設定が完了しました！\n\n【重要】\nメニュー「📚コンテンツ生成ツール」→「🔧機能の権限承認」を実行して、外部通信とGoogle Driveへのアクセスを許可してください。\n\nその後、Dify APIキーを設定してください。');
+}
+
+/**
+ * スプレッドシートOpen時の処理
+ */
+function onOpen() {
+  createCustomMenu();
+}
+
+/**
+ * カスタムメニューを作成
+ */
+function createCustomMenu() {
+  const ui = SpreadsheetApp.getUi();
+  
+  ui.createMenu('📚 コンテンツ生成ツール')
+    .addItem('🔄 今すぐRSS収集', 'showCollectRssDialog')
+    .addItem('🔗 URLから収集', 'showCollectUrlDialog')
+    .addSeparator()
+    .addItem('✨ コンテンツ生成', 'showGenerateContentSidebar')
+    .addItem('📋 生成済み一覧', 'showContentsList')
+    .addSeparator()
+    .addItem('⚙️ 設定', 'showSettingsDialog')
+    .addItem('⏰ 定期収集を設定', 'showTriggerSettings')
+    .addItem('🔧 機能の権限承認', 'authorizeScopes') // Add this line
+    .addSeparator()
+    .addItem('📖 使い方', 'showReadme')
+    .addItem('🔧 初期設定', 'initializeSpreadsheet')
+    .addToUi();
 }
 
 /**
@@ -228,6 +272,10 @@ function initReadmeSheet() {
     ['2. Dify API Key を入力'],
     ['3. Dify Workflow ID を入力'],
     ['4. 「保存」をクリック'],
+    [''],
+    ['▶️ 重要: 権限承認'],
+    ['メニュー「📚コンテンツ生成ツール」→「🔧機能の権限承認」を必ず実行してください。'],
+    ['これを行わないと、Webアプリからの収集や保存が機能しません。'],
     [''],
     ['▶️ RSS収集'],
     ['1. 「📡RSSソース」シートにRSSフィードを追加'],

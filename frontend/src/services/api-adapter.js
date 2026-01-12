@@ -52,12 +52,25 @@ class GasClient {
             });
 
             if (!response.ok) {
+                console.error('GAS HTTP Error:', response.status, response.statusText);
                 throw new Error(`HTTP Error: ${response.status}`);
             }
 
-            const data = await response.json();
+            // GASはリダイレクト後に text/plain で返すことがあるため、
+            // 一度テキストとして取得してからJSONパースを試みる
+            const textData = await response.text();
+            let data;
+            try {
+                data = JSON.parse(textData);
+            } catch (e) {
+                console.error('JSON Parse Error:', e, textData);
+                throw new Error('Invalid JSON response from GAS');
+            }
+
+            console.log(`GAS API Response (${action}):`, data); // Debug log
 
             if (data.success === false) {
+                console.error('GAS API Error:', data.error);
                 throw new Error(data.error || 'Unknown API Error');
             }
 

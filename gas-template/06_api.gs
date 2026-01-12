@@ -111,8 +111,10 @@ function doPost(e) {
  * JSONレスポンスを作成
  */
 function createJsonResponse(data) {
+  // MimeType.JSONだとブラウザによっては厳格なCORSチェックやパースエラーになることがあるため、
+  // TEXTとして返してフロントエンドでパースする方が安定する
   return ContentService.createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
+    .setMimeType(ContentService.MimeType.TEXT);
 }
 
 /**
