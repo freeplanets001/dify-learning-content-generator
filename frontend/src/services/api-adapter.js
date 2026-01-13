@@ -101,6 +101,7 @@ export default {
         getArticles: (params) => gasClient.request('getArticles', params),
         getArticle: (id) => gasClient.request('getArticle', { id }),
         deleteArticle: (id) => gasClient.request('deleteArticle', { id }),
+        deleteArticlesBatch: (ids, deleteAll) => gasClient.request('deleteArticlesBatch', { ids, deleteAll }),
         getRssSources: () => gasClient.request('getRssSources'),
         saveRssSource: (data) => gasClient.request('saveRssSource', data),
         deleteRssSource: (id) => gasClient.request('deleteRssSource', { id }),
@@ -111,6 +112,7 @@ export default {
         generate: (articleId, templateId) => gasClient.request('generateContent', { articleId, templateId }),
         generateCombined: (articleIds, templateId) => gasClient.request('generateCombinedContent', { articleIds, templateId }),
         getList: (params) => gasClient.request('getContents', params),
+        deleteContent: (id) => gasClient.request('deleteContent', { id }),
     },
 
     // 設定関連
@@ -128,5 +130,10 @@ export default {
     // 画像生成関連
     image: {
         generate: (prompt) => gasClient.request('generateImage', { prompt }),
+    },
+
+    // ダッシュボード
+    dashboard: {
+        getStats: () => gasClient.request('getDashboardStats'),
     }
 };

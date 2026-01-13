@@ -178,6 +178,27 @@ function Content() {
     showToast('コピーしました 📋');
   };
 
+  // Save to Obsidian
+  const handleSaveToObsidian = async (c) => {
+    if (!window.confirm(`「${c.title}」をObsidianに保存しますか？`)) return;
+    setLoading(true);
+    try {
+      // ファイル名はタイトルをサニタイズして使用
+      const title = (c.title || 'Untitled').replace(/[:/\\?%*|"<>]/g, '_');
+      const filename = `${title}.md`;
+      // コンテンツにFrontmatter等はつけず、そのまま保存（GAS側で調整可能だが仕様による）
+      // 必要があればここでFrontmatterを付与する
+      // 今回はそのまま送る
+      await contentApi.saveToObsidian(filename, c.content);
+      showToast('Obsidianに保存しました 💎');
+    } catch (e) {
+      console.error('Obsidian Save Error:', e);
+      showToast('Obsidianへの保存に失敗しました', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Toggle expand
   const toggleExpand = (id) => {
     setExpandedIds(prev => {
@@ -315,6 +336,7 @@ function Content() {
                           {c.status !== 'approved' && <button style={{ ...styles.btn, ...styles.btnSmall, ...styles.btnPrimary }} onClick={() => handleApprove(c.id)}>✅</button>}
                           {c.status !== 'rejected' && <button style={{ ...styles.btn, ...styles.btnSmall, ...styles.btnGray }} onClick={() => handleReject(c.id)}>✖️</button>}
                           <button style={{ ...styles.btn, ...styles.btnSmall, ...styles.btnPurple }} onClick={() => handleRegenerate(c.id)}>🔄</button>
+                          <button style={{ ...styles.btn, ...styles.btnSmall, ...styles.btnGray }} onClick={() => handleSaveToObsidian(c)}>💎 Obsidian</button>
                           <button style={{ ...styles.btn, ...styles.btnSmall, ...styles.btnGray }} onClick={() => handleExport(c, 'md')}>📤 MD</button>
                           <button style={{ ...styles.btn, ...styles.btnSmall, ...styles.btnRed }} onClick={() => handleDelete(c.id)}>🗑️</button>
                         </div>

@@ -23,9 +23,28 @@ export const previewContent = (data) => Promise.resolve({ data: { preview: 'dumm
 // バッチ生成 (GAS未実装 - dummy)
 export const batchGenerate = (data) => Promise.resolve({ data: [] });
 
+// 結合コンテンツ生成
+export const generateCombinedContent = (articleIds, templateType) => {
+  return api.content.generateCombined(articleIds, templateType)
+    .then(res => ({ data: { success: true, ...res } }));
+};
+
 // コンテンツ一覧を取得
 export const getContents = (params = {}) => api.content.getList(params)
   .then(data => ({ data: data }));
+
+// データソース詳細を取得 (一括取得からフィルタ)
+export const getDataSource = (id) => api.collector.getRssSources()
+  .then(data => {
+    const source = data.find(s => s.id == id);
+    return { data: source };
+  });
+
+// Obsidianに保存
+export const saveToObsidian = (filename, content, path) => {
+  return api.obsidian.save(filename, content, path)
+    .then(data => ({ data: data }));
+};
 
 // コンテンツ詳細を取得 (GASのリストから検索)
 export const getContent = (id) => api.content.getList()
@@ -40,8 +59,9 @@ export const createContent = (data) => Promise.resolve({ data: { id: Date.now(),
 // コンテンツを更新 (GAS未実装 - dummy)
 export const updateContent = (id, data) => Promise.resolve({ data: { id, ...data } });
 
-// コンテンツを削除 (GAS未実装 - dummy)
-export const deleteContent = (id) => Promise.resolve({ data: { success: true } });
+// コンテンツを削除
+export const deleteContent = (id) => api.content.deleteContent(id)
+  .then(data => ({ data: data }));
 
 // コンテンツ承認 (GAS未実装 - dummy)
 export const approveContent = (id) => Promise.resolve({ data: { success: true, status: 'approved' } });

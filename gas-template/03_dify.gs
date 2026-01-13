@@ -17,12 +17,24 @@ const TEMPLATES = [
 
 /**
  * Dify Workflow APIを呼び出し
+ * @param {Object} inputs - Workflow入力
+ * @param {Object} [customConfig] - 任意の接続設定 (省略時はデフォルトDify設定を使用)
  */
-function callDifyWorkflow(inputs) {
-  const config = getDifyConfig();
+function callDifyWorkflow(inputs, customConfig = null) {
+  const config = customConfig || getDifyConfig();
   
+  // マージ: 画像生成設定でAPIキーがない場合は基本設定のAPIキーを使う
+  if (customConfig && !customConfig.apiKey) {
+    const baseConfig = getDifyConfig();
+    config.apiKey = baseConfig.apiKey;
+    // BaseURLも空なら基本設定を使う
+    if (!customConfig.baseUrl) {
+      config.baseUrl = baseConfig.baseUrl;
+    }
+  }
+
   if (!config.apiKey || !config.workflowId) {
-    throw new Error('Dify APIが設定されていません。設定シートでAPIキーとWorkflow IDを入力してください。');
+    throw new Error('APIが設定されていません。設定シートでAPIキーとWorkflow IDを入力してください。');
   }
   
   const url = `${config.baseUrl}/workflows/run`;
@@ -49,13 +61,26 @@ function callDifyWorkflow(inputs) {
   
   if (responseCode !== 200) {
     console.error('Dify API Error:', responseCode, responseText);
-    throw new Error(`Dify API Error: ${responseCode} - ${responseText}`);
+    // デバッグ用に送信したペイロードもエラーメッセージに含める
+    throw new Error(`Dify API Error: ${responseCode} - ${responseText} (Inputs: ${JSON.stringify(inputs)})`);
   }
   
   // 生のレスポンスを返す (デバッグのため全量)
   const result = JSON.parse(responseText);
   console.log('Dify Response:', JSON.stringify(result));
   return result;
+}
+
+/**
+ * 画像生成用の設定を取得
+ */
+function getImageGenConfig() {
+  const settings = getSettings();
+  return {
+    apiKey: settings[SETTINGS_KEYS.IMAGE_GEN_API_KEY],
+    baseUrl: settings[SETTINGS_KEYS.IMAGE_GEN_BASE_URL] || 'https://api.dify.ai/v1',
+    workflowId: settings[SETTINGS_KEYS.IMAGE_GEN_WORKFLOW_ID]
+  };
 }
 
 // === コンテンツ生成 ===
@@ -77,11 +102,12 @@ function generateContent(articleId, templateId) {
   const template = TEMPLATES.find(t => t.id === templateId) || TEMPLATES[0];
   
   // Dify Workflow入力を構築
+  // 必須フィールドが空だとエラーになるため、空文字の場合はデフォルト値を設定
   const inputs = {
-    article_title: article.title,
-    article_url: article.url,
-    article_content: article.summary || '',
-    source_name: article.source,
+    article_title: article.title || 'No Title',
+    article_url: article.url || '',
+    article_content: (article.summary || '').substring(0, 15000) || 'No Content',
+    source_name: article.source || 'Unknown',
     template_type: templateId,
     template_name: template.name,
     article_description: article.summary || '',
@@ -139,7 +165,7 @@ function generateCombinedContent(articleIds, templateId) {
   const inputs = {
     article_title: `${articles.length}件の記事まとめ`,
     article_url: articles[0].url,
-    article_content: combinedContent,
+    article_content: (combinedContent || '').substring(0, 15000),
     source_name: sourcesList,
     template_type: templateId,
     template_name: template.name,
@@ -224,6 +250,25 @@ function getContents(limit = 50) {
   return contents;
 }
 
+/**
+ * 生成済みコンテンツを削除
+ */
+function deleteGeneratedContent(id) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.CONTENTS);
+  const data = sheet.getDataRange().getValues();
+  const targetId = String(id);
+  
+  console.log('🗑️ deleteGeneratedContent called with id:', targetId);
+  
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === targetId) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Content not found' };
+}
+
 
 
 // === ローカル生成 (Dify無し) ===
@@ -275,14 +320,28 @@ function generateContentLocal(articleId, templateId) {
  * 画像生成 (Difyワークフロー経由)
  */
 function generateImageFromDify(prompt) {
+  // 画像生成用の設定を取得
+  const imgConfig = getImageGenConfig();
+  
   // 画像生成用の入力を構築
+  // Workflowの必須要件を満たすためにダミー値を設定
   const inputs = {
     prompt: prompt,
-    mode: 'image_generation' // ワークフロー側で分岐させるためのフラグ
+    mode: 'image_generation',
+    article_title: 'Image Generation Request',
+    article_url: '',
+    article_content: prompt,
+    source_name: 'ImageGen',
+    template_type: 'image',
+    template_name: 'Image Generation',
+    article_description: prompt, // 必須フィールド対応
+    article_author: 'User',
+    article_source: 'ImageGen'
   };
   
   try {
-    const rawResponse = callDifyWorkflow(inputs);
+    // 画像生成設定を使って呼び出し
+    const rawResponse = callDifyWorkflow(inputs, imgConfig);
     const outputs = rawResponse.data?.outputs || rawResponse.data || rawResponse;
     
     // 出力から画像URLを探す

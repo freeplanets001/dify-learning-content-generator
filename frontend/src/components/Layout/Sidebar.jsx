@@ -33,11 +33,19 @@ const navigation = [
   }
 ];
 
-function Sidebar() {
+function Sidebar({ isOpen, onClose }) {
   return (
-    <div className="w-64 bg-white shadow-lg">
-      <div className="flex items-center justify-center h-16 border-b border-secondary-200">
+    <div
+      className={`fixed z-30 inset-y-0 left-0 w-64 transition duration-300 transform bg-white shadow-lg overflow-y-auto lg:translate-x-0 lg:static lg:inset-0 ${isOpen ? 'translate-x-0 ease-out' : '-translate-x-full ease-in'
+        }`}
+    >
+      <div className="flex items-center justify-between h-16 border-b border-secondary-200 px-6">
         <h1 className="text-xl font-bold text-primary-600">Dify Learning</h1>
+        <button onClick={onClose} className="text-gray-500 lg:hidden">
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
       </div>
       <nav className="mt-6">
         {navigation.map((item) => (

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as collectorApi from '../services/collector.api';
-import api from '../services/api';
+import * as contentApi from '../services/content.api';
 
 // データソースタイプの定義
 const SOURCE_TYPES = [
@@ -487,11 +487,8 @@ function Collector() {
     setCombinedGenerating(true);
     try {
       const articleIds = Array.from(selectedArticles);
-      const res = await api.post('/api/content/generate-combined', {
-        articleIds,
-        templateType: selectedTemplate,
-        useDify: true
-      });
+      // useDify: true is default behavior in GAS now
+      const { data: res } = await contentApi.generateCombinedContent(articleIds, selectedTemplate);
 
       if (res.success) {
         showMessage(`✨ ${articleIds.length}件の記事から結合コンテンツを生成しました！「コンテンツ生成」ページで確認できます`, 'success');

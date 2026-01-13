@@ -36,8 +36,11 @@ export const updateArticleStatus = (id, status) => Promise.resolve({ data: { suc
 export const deleteArticle = (id) => api.collector.deleteArticle(id)
   .then(data => ({ data: data }));
 
-// 記事を一括削除 (GAS未実装: dummy)
-export const deleteBatchArticles = (ids) => Promise.resolve({ data: { success: true } });
+// 記事を一括削除 (GAS一括削除APIを使用)
+export const deleteBatchArticles = async (ids, deleteAll = false) => {
+  const result = await api.collector.deleteArticlesBatch(ids, deleteAll);
+  return { data: result };
+};
 
 // データソース一覧を取得
 export const getDataSources = (enabled = null) => api.collector.getRssSources()
@@ -64,8 +67,35 @@ export const createDataSource = (data) => api.collector.saveRssSource(data)
 export const updateDataSource = (id, data) => api.collector.saveRssSource(data)
   .then(res => ({ data: res }));
 
-// データソースを切り替え (データ更新で対応)
-export const toggleDataSource = (id) => Promise.resolve({ data: { success: true } });
+// データソースを切り替え (enabled を反転させて保存)
+export const toggleDataSource = async (id) => {
+  console.log('🔄 toggleDataSource called with id:', id);
+
+  // 現在のソースを取得して enabled を反転
+  const sources = await api.collector.getRssSources();
+  console.log('📡 Current sources:', sources);
+
+  const source = sources.find(s => String(s.id) === String(id));
+  if (source) {
+    // 現在の enabled 値を確認し、明示的に反転
+    const currentEnabled = source.enabled === true || source.enabled === 'TRUE' || source.enabled === 'true';
+    const newEnabled = !currentEnabled;
+
+    console.log(`🔧 Toggling source ${source.name}: ${currentEnabled} -> ${newEnabled}`);
+
+    // 必要なフィールドのみを送信
+    const updateData = {
+      id: source.id,
+      name: source.name,
+      url: source.url,
+      enabled: newEnabled
+    };
+
+    return api.collector.saveRssSource(updateData).then(res => ({ data: res }));
+  }
+  console.error('❌ Source not found for id:', id);
+  return Promise.resolve({ data: { success: false } });
+};
 
 // データソースを削除
 export const deleteDataSource = (id) => api.collector.deleteRssSource(id)

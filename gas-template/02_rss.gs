@@ -9,6 +9,7 @@
  */
 function collectAllRss() {
   const sources = getEnabledRssSources();
+  console.log('📡 Found RSS Sources:', JSON.stringify(sources));
   let totalCollected = 0;
   const results = [];
   
@@ -18,6 +19,7 @@ function collectAllRss() {
   for (const source of sources) {
     try {
       const articles = fetchRssFeed(source.url);
+      console.log(`📰 Fetched from ${source.name}: ${articles.length} articles`);
       let count = 0;
       
       for (const article of articles) {
@@ -159,7 +161,10 @@ function getEnabledRssSources() {
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     // ID, 名前, URL, 有効フラグ
-    if (row[2] && row[3] === true) {
+    const enabled = row[3];
+    // 有効フラグは boolean, 文字列 "TRUE", または truthy な値を許容
+    const isEnabled = enabled === true || enabled === 'TRUE' || enabled === 'true' || enabled === 1;
+    if (row[2] && isEnabled) {
       sources.push({
         id: row[0],
         name: row[1],
@@ -287,6 +292,22 @@ function fetchRssFeed(feedUrl) {
           if (title && link) {
              const formattedContent = formatArticleContent(fullContent, imageUrl);
              articles.push({ title, link, summary: formattedContent });
+          }
+        }
+      } else {
+        // RSS 1.0 (RDF) - items are direct children of root
+        const rssNs = XmlService.getNamespace('http://purl.org/rss/1.0/');
+        const rdfItems = root.getChildren('item', rssNs);
+        console.log(`📋 RSS 1.0 (RDF) items found: ${rdfItems.length}`);
+        
+        for (const item of rdfItems) {
+          const title = item.getChild('title', rssNs)?.getText();
+          const link = item.getChild('link', rssNs)?.getText();
+          const description = item.getChild('description', rssNs)?.getText() || '';
+          
+          if (title && link) {
+            const formattedContent = formatArticleContent(description, '');
+            articles.push({ title, link, summary: formattedContent });
           }
         }
       }
@@ -419,22 +440,43 @@ function getArticleById(id) {
  */
 function saveRssSource(source) {
   const sheet = getOrCreateSheet(SHEET_NAMES.RSS_SOURCES);
-  const lastRow = sheet.getLastRow();
+  const data = sheet.getDataRange().getValues();
   
-  // 新規追加のみ対応 (編集はスプレッドシート直接で)
+  console.log('📝 saveRssSource called with:', JSON.stringify(source));
+  
+  // 既存ソースの更新チェック
+  if (source.id !== undefined && source.id !== null && source.id !== '') {
+    const sourceId = String(source.id);
+    for (let i = 1; i < data.length; i++) {
+      const rowId = String(data[i][0]);
+      if (rowId === sourceId) {
+        console.log(`✅ Found existing source at row ${i + 1}, updating...`);
+        // 既存行を更新
+        sheet.getRange(i + 1, 2).setValue(source.name || data[i][1]);
+        sheet.getRange(i + 1, 3).setValue(source.url || data[i][2]);
+        sheet.getRange(i + 1, 4).setValue(source.enabled !== undefined ? source.enabled : data[i][3]);
+        SpreadsheetApp.flush();
+        return { success: true, id: source.id, updated: true };
+      }
+    }
+    console.log(`⚠️ Source ID ${sourceId} not found in existing data`);
+  }
+  
+  // 新規追加
+  const lastRow = sheet.getLastRow();
   const newId = lastRow;
   
   const rowData = [
     newId,
     source.name,
     source.url,
-    true, // enabled
+    source.enabled !== undefined ? source.enabled : true,
     '' // lastCollected
   ];
   
   sheet.getRange(lastRow + 1, 1, 1, 5).setValues([rowData]);
   SpreadsheetApp.flush();
-  return { id: newId, ...source };
+  return { success: true, id: newId, created: true };
 }
 
 /**
@@ -474,14 +516,59 @@ function getArticles(limit = 50) {
 function deleteArticle(id) {
   const sheet = getOrCreateSheet(SHEET_NAMES.ARTICLES);
   const data = sheet.getDataRange().getValues();
+  const targetId = String(id);
+  
+  console.log('🗑️ deleteArticle called with id:', targetId);
   
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] == id) {
+    if (String(data[i][0]) === targetId) {
+      console.log(`✅ Found article at row ${i + 1}, deleting...`);
       sheet.deleteRow(i + 1);
       return { success: true };
     }
   }
+  console.log('⚠️ Article not found with id:', targetId);
   return { success: false, message: 'Article not found' };
+}
+
+/**
+ * 記事一括削除
+ * @param {Array} ids - 削除する記事IDの配列
+ * @param {boolean} deleteAll - trueの場合、全記事を削除
+ */
+function deleteArticlesBatch(ids, deleteAll = false) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.ARTICLES);
+  const data = sheet.getDataRange().getValues();
+  
+  console.log('🗑️ deleteArticlesBatch called:', deleteAll ? 'ALL' : `${ids?.length || 0} items`);
+  
+  // 削除対象の行番号を収集（1-indexed）
+  const rowsToDelete = [];
+  
+  if (deleteAll) {
+    // 全削除: ヘッダー以外のすべての行
+    for (let i = 1; i < data.length; i++) {
+      rowsToDelete.push(i + 1);
+    }
+  } else if (ids && ids.length > 0) {
+    // 選択削除: IDに一致する行
+    const idsSet = new Set(ids.map(id => String(id)));
+    for (let i = 1; i < data.length; i++) {
+      if (idsSet.has(String(data[i][0]))) {
+        rowsToDelete.push(i + 1);
+      }
+    }
+  }
+  
+  // 逆順で削除（行番号がずれないように）
+  rowsToDelete.sort((a, b) => b - a);
+  for (const row of rowsToDelete) {
+    sheet.deleteRow(row);
+  }
+  
+  SpreadsheetApp.flush();
+  console.log(`✅ Deleted ${rowsToDelete.length} articles`);
+  return { success: true, deleted: rowsToDelete.length };
 }
 
 /**
@@ -498,4 +585,24 @@ function deleteRssSource(id) {
     }
   }
   return { success: false, message: 'Source not found' };
+}
+
+/**
+ * テスト用: saveRssSource の動作確認
+ * GASエディタから直接実行してログを確認
+ */
+function testSaveRssSourceUpdate() {
+  // 既存ソースのIDを指定してテスト（ID=1 を使用）
+  const testSource = {
+    id: 1,
+    name: 'TEST_UPDATE',
+    url: 'https://example.com/test',
+    enabled: false
+  };
+  
+  console.log('🧪 Testing saveRssSource with:', JSON.stringify(testSource));
+  const result = saveRssSource(testSource);
+  console.log('📋 Result:', JSON.stringify(result));
+  
+  return result;
 }

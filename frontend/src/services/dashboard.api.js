@@ -1,29 +1,27 @@
-import api from './api';
+import api from './api-adapter';
 
 /**
  * ダッシュボードAPI
  */
 
 // 統計情報を取得
-export const getStats = () => api.get('/api/dashboard/stats');
+export const getStats = () => api.dashboard.getStats()
+  .then(data => ({ data: data }));
 
-// アクティビティログを取得
-export const getActivity = (params = {}) => api.get('/api/dashboard/activity', { params });
+// アクティビティログを取得 (Dummy)
+export const getActivity = (params = {}) => Promise.resolve({ data: [] });
 
-// 概要を取得
-export const getOverview = () => api.get('/api/dashboard/overview');
+// 概要を取得 (Dummy)
+export const getOverview = () => Promise.resolve({ data: {} });
 
-// 記事タイムラインを取得
-export const getArticlesTimeline = (days = 7) =>
-  api.get('/api/dashboard/charts/articles-timeline', { params: { days } });
+// 記事タイムラインを取得 (Dummy)
+export const getArticlesTimeline = (days = 7) => Promise.resolve({ data: [] });
 
-// ソース別分布を取得
-export const getSourceDistribution = () =>
-  api.get('/api/dashboard/charts/source-distribution');
+// ソース別分布を取得 (Dummy)
+export const getSourceDistribution = () => Promise.resolve({ data: [] });
 
-// コンテンツステータス分布を取得
-export const getContentStatusDistribution = () =>
-  api.get('/api/dashboard/charts/content-status');
+// コンテンツステータス分布を取得 (Dummy)
+export const getContentStatusDistribution = () => Promise.resolve({ data: [] });
 
 export default {
   getStats,

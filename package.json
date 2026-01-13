@@ -39,6 +39,7 @@
     "pptxgenjs": "^4.0.1",
     "rss-parser": "^3.13.0",
     "sql.js": "^1.10.3",
+    "streamdown": "^2.0.1",
     "turndown": "^7.2.2",
     "winston": "^3.11.0"
   },

@@ -18,7 +18,10 @@ const SETTINGS_KEYS = {
   DIFY_WORKFLOW_ID: 'Dify Workflow ID',
   AUTO_COLLECT_INTERVAL: '自動収集間隔（時間）',
   OBSIDIAN_VAULT_PATH: 'Obsidian Vault Path',
-  OBSIDIAN_DAILY_NOTE_PATH: 'Obsidian Daily Note Path'
+  OBSIDIAN_DAILY_NOTE_PATH: 'Obsidian Daily Note Path',
+  IMAGE_GEN_API_KEY: 'Image Gen API Key',
+  IMAGE_GEN_BASE_URL: 'Image Gen Base URL',
+  IMAGE_GEN_WORKFLOW_ID: 'Image Gen Workflow ID'
 };
 
 // === ユーティリティ ===
@@ -28,6 +31,50 @@ const SETTINGS_KEYS = {
  */
 function getSpreadsheet() {
   return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+/**
+ * シートを取得（なければ作成）
+ */
+function getOrCreateSheet(sheetName) {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    // ...
+  }
+  return sheet;
+}
+
+// ... (getSettings, saveSetting, etc. are assumed to be here or imported)
+
+/**
+ * 公開用設定を取得 (フロントエンド用)
+ */
+function getPublicSettings() {
+  const settings = getSettings();
+  return {
+    difyBaseUrl: settings[SETTINGS_KEYS.DIFY_BASE_URL],
+    difyWorkflowId: settings[SETTINGS_KEYS.DIFY_WORKFLOW_ID],
+    isDifyConfigured: !!settings[SETTINGS_KEYS.DIFY_API_KEY],
+    obsidianVaultPath: settings[SETTINGS_KEYS.OBSIDIAN_VAULT_PATH],
+    obsidianDailyNotePath: settings[SETTINGS_KEYS.OBSIDIAN_DAILY_NOTE_PATH],
+    imageGenBaseUrl: settings[SETTINGS_KEYS.IMAGE_GEN_BASE_URL],
+    imageGenWorkflowId: settings[SETTINGS_KEYS.IMAGE_GEN_WORKFLOW_ID],
+    isImageGenConfigured: !!settings[SETTINGS_KEYS.IMAGE_GEN_API_KEY]
+  };
+}
+
+/**
+ * 接続状態を取得 (フロントエンド用)
+ */
+function getConnectionStatus() {
+  const settings = getSettings();
+  return {
+    dify: !!settings[SETTINGS_KEYS.DIFY_API_KEY] && !!settings[SETTINGS_KEYS.DIFY_WORKFLOW_ID],
+    obsidian: !!settings[SETTINGS_KEYS.OBSIDIAN_VAULT_PATH],
+    imageGen: !!settings[SETTINGS_KEYS.IMAGE_GEN_API_KEY] || !!settings[SETTINGS_KEYS.DIFY_API_KEY] // Difyキー流用も可とする場合
+  };
 }
 
 /**
