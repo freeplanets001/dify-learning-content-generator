@@ -64,7 +64,7 @@ function Sidebar({ isOpen, onClose }) {
       </nav>
       <div className="absolute bottom-0 w-64 p-4 border-t border-secondary-200">
         <p className="text-xs text-secondary-500 text-center">
-          v1.0.0 - Dify Learning Content Generator
+          v1.1.0 - Mobile Ready
         </p>
       </div>
     </div>
