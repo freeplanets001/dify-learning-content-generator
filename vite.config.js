@@ -26,7 +26,7 @@ export default defineConfig({
     }
   },
   css: {
-    postcss: path.resolve(__dirname, 'frontend'),
+    postcss: __dirname,
   },
   resolve: {
     alias: {
